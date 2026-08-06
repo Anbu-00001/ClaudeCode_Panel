@@ -1,0 +1,39 @@
+{
+  "id": "code-reviewer",
+  "title": "Claude reviews your code before you commit",
+  "blurb": "Adds a reviewer that reads your changes and points out bugs, missing error handling, and anything you left behind by accident.",
+  "rung": "helpers",
+  "newcomerProblem": "You finish a change and aren't sure what you missed.",
+  "requires": {
+    "minClaudeVersion": "2.1.145",
+    "git": true
+  },
+  "installs": [
+    {
+      "kind": "subagent",
+      "name": "reviewer",
+      "from": "agents/reviewer.md",
+      "to": ".claude/agents/reviewer.md"
+    },
+    {
+      "kind": "skill",
+      "name": "check",
+      "from": "skills/check/SKILL.md",
+      "to": ".claude/skills/check/SKILL.md"
+    },
+    {
+      "kind": "settings",
+      "scope": "local",
+      "patch": {
+        "permissions": {
+          "allow": ["Bash(git diff *)", "Bash(git status *)", "Bash(git log *)"]
+        }
+      }
+    }
+  ],
+  "tryThis": "/check",
+  "tryThisExplain": "Make a small edit to any file, then type this in Claude Code.",
+  "explain": "A helper is a second Claude that works on one job in its own conversation. It doesn't see your main chat, so it starts clean and reports back just what it found. This one reads your changes and tells you what looks wrong, without filling your conversation with the whole file.",
+  "honestLimit": "It reads your changes, not your whole project, so it can miss problems that live somewhere else.",
+  "uninstallNote": null
+}

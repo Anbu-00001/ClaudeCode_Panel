@@ -1,0 +1,32 @@
+{
+  "id": "voice-input",
+  "title": "Say your prompt out loud instead of typing it",
+  "blurb": "Turns on dictation so you can talk to Claude instead of typing. Your voice is turned into text on your own computer — nothing is recorded or sent anywhere, and it costs nothing to use.",
+  "rung": "commands",
+  "newcomerProblem": "Typing out a long prompt is slow, and you think faster than you type.",
+  "requires": {
+    "minClaudeVersion": "2.1.145",
+    "git": false,
+    "setupOutsideClaude": true
+  },
+  "installs": [
+    {
+      "kind": "script",
+      "name": "talk",
+      "from": "scripts/talk.sh",
+      "to": ".claude/scripts/talk.sh",
+      "executable": true
+    },
+    {
+      "kind": "skill",
+      "name": "talk",
+      "from": "skills/talk/SKILL.md",
+      "to": ".claude/skills/talk/SKILL.md"
+    }
+  ],
+  "tryThis": ".claude/scripts/talk.sh",
+  "tryThisExplain": "Run that in a second terminal, then speak. Your words appear wherever your cursor is.",
+  "explain": "Your computer listens through the microphone and types out what you say, wherever your cursor happens to be — including the box where you talk to Claude. The listening part runs entirely on your own machine, so your voice never leaves it and there is nothing to pay for.",
+  "honestLimit": "This types into whatever window you're already in — it doesn't add a microphone button inside Claude Code. It also needs a one-time setup on your computer first, and the kit tells you exactly what to run.",
+  "uninstallNote": "This removes the shortcut. Anything you installed on your computer yourself stays where it is."
+}

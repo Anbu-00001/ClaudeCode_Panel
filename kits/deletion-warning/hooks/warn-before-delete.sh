@@ -33,7 +33,9 @@ FIND_LIMIT=5000           # stop counting files past this
 # ---------------------------------------------------------------------------
 # Read input, bounded so a huge payload can't hang or exhaust memory.
 # ---------------------------------------------------------------------------
-INPUT=$(head -c "$MAX_INPUT_BYTES" 2>/dev/null)
+# Null bytes are stripped first: bash warns about them during command
+# substitution, and a safety tool must not print noise onto stderr.
+INPUT=$(head -c "$MAX_INPUT_BYTES" 2>/dev/null | tr -d '\000' 2>/dev/null)
 [ -z "$INPUT" ] && exit 0
 
 # ---------------------------------------------------------------------------
@@ -303,6 +305,9 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(sudo +)?rm( |$)'; then
   # shellcheck disable=SC2086
   UNSAVED=$(count_unsaved $PATHS)
 
+  # Reaching here means the delete is recursive, uses a bare glob, or names
+  # more than five paths — all of which §9.5 asks us to surface. The only
+  # question left is how alarming the message should be.
   if [ "$UNSAVED" -gt 0 ] 2>/dev/null; then
     respond_ask \
       "This deletes $TOTAL $(plural "$TOTAL" "file" "files") and can't be undone." \
@@ -316,13 +321,9 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(sudo +)?rm( |$)'; then
       "All of it is saved in git, so you could get it back."
   fi
 
-  if [ "$TOTAL" -ge 25 ]; then
-    respond_ask \
-      "This deletes $TOTAL files." \
-      "All of it is saved in git, so you could get it back."
-  fi
-
-  exit 0
+  respond_ask \
+    "This deletes $TOTAL $(plural "$TOTAL" "file" "files")." \
+    "All of it is saved in git, so you could get it back."
 fi
 
 # --- Deleting credentials by any other means --------------------------------

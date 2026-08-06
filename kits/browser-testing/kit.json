@@ -1,0 +1,29 @@
+{
+  "id": "browser-testing",
+  "title": "Claude tests your site in a real browser",
+  "blurb": "Lets Claude open your site, click through it, fill in forms, and tell you what's broken — the same way a person would check it.",
+  "rung": "tools",
+  "newcomerProblem": "You changed something and don't know if the page still works.",
+  "requires": {
+    "minClaudeVersion": "2.1.145",
+    "git": false,
+    "network": true
+  },
+  "installs": [
+    {
+      "kind": "mcp",
+      "name": "playwright",
+      "scope": "project",
+      "server": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp@latest"]
+      }
+    }
+  ],
+  "tryThis": "Open localhost:3000 and tell me if the login form works",
+  "tryThisExplain": "Start your site first, then ask Claude this in your own words.",
+  "explain": "A tool is something extra you plug into Claude so it can reach outside your files. This one gives Claude a real browser it can drive: it opens pages, clicks buttons, types into forms, and reads what came back. You describe what to check in plain English, and it goes and looks.",
+  "honestLimit": "The first run downloads the browser, which takes a minute and needs an internet connection.",
+  "uninstallNote": "This removes it from this project. The downloaded browser stays on your computer; nothing else is changed."
+}
