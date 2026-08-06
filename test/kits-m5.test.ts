@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getKit, installKit, isKitInstalled, loadKits, uninstallKit } from "../src/core/kits.js";
+import { KIT_ORDER, getKit, installKit, isKitInstalled, loadKits, uninstallKit } from "../src/core/kits.js";
 import { resolvePaths } from "../src/core/paths.js";
 import { appendUndoEntry } from "../src/core/undo.js";
 
@@ -46,9 +46,11 @@ function runHook(script: string, payload: unknown, cwd = repoDir): string {
 const asks = (out: string) => out.includes('"permissionDecision":"ask"');
 
 describe("the whole kit library", () => {
-  it("has all nine kits and loads them in hand-curated order", () => {
+  it("loads every bundled kit in hand-curated order", () => {
     const kits = loadKits(KITS);
-    expect(kits).toHaveLength(9);
+    // Tied to the curated order rather than a literal count, so adding a kit
+    // doesn't fail a test that isn't about counting.
+    expect(kits).toHaveLength(KIT_ORDER.length);
     expect(kits[0]?.id).toBe("deletion-warning");
     expect(kits[1]?.id).toBe("safe-permissions");
   });

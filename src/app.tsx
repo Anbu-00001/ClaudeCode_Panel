@@ -5,6 +5,7 @@ import { type Kit, loadKits } from "./core/kits.js";
 import { Commands } from "./screens/Commands.js";
 import { Explore } from "./screens/Explore.js";
 import { KitDetail } from "./screens/KitDetail.js";
+import { Manage } from "./screens/Manage.js";
 import { Kits } from "./screens/Kits.js";
 import { Ladder } from "./screens/Ladder.js";
 
@@ -13,7 +14,8 @@ type Screen =
   | { name: "kits" }
   | { name: "kitDetail"; kit: Kit }
   | { name: "explore" }
-  | { name: "commands" };
+  | { name: "commands" }
+  | { name: "manage" };
 
 function useTerminalSize() {
   const { stdout } = useStdout();
@@ -84,6 +86,18 @@ export function App() {
     case "commands":
       return <Commands onBack={() => setScreen({ name: "ladder" })} />;
 
+    case "manage":
+      return (
+        <Manage
+          repo={state.repo}
+          onOpenKits={() => setScreen({ name: "kits" })}
+          onBack={() => {
+            setState(detectLadderState());
+            setScreen({ name: "ladder" });
+          }}
+        />
+      );
+
     case "ladder":
     default:
       return (
@@ -94,6 +108,7 @@ export function App() {
           onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
           onOpenExplore={() => setScreen({ name: "explore" })}
           onOpenCommands={() => setScreen({ name: "commands" })}
+          onOpenManage={() => setScreen({ name: "manage" })}
         />
       );
   }

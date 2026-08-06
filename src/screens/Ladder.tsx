@@ -13,6 +13,7 @@ interface LadderProps {
   onOpenKit?: (kit: Kit) => void;
   onOpenExplore?: () => void;
   onOpenCommands?: () => void;
+  onOpenManage?: () => void;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -21,7 +22,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands }: LadderProps) {
+export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands, onOpenManage }: LadderProps) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -78,6 +79,10 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOp
     }
     if (item.key === "commands" && onOpenCommands) {
       onOpenCommands();
+      return;
+    }
+    if (item.key === "manage" && onOpenManage) {
+      onOpenManage();
       return;
     }
     if (item.key.startsWith("kit:")) {
