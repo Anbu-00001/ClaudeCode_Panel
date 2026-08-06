@@ -1,9 +1,20 @@
 {
   "id": "voice-input",
-  "title": "Say your prompt out loud instead of typing it",
-  "blurb": "Turns on dictation so you can talk to Claude instead of typing. Your voice is turned into text on your own computer — nothing is recorded or sent anywhere, and it costs nothing to use.",
+  "title": "Talk instead of typing, without your voice leaving this computer",
+  "blurb": "Claude Code can already listen — just type /voice, and that is the better choice for most people. Set this up only if you need your voice to stay on your own machine, or if /voice doesn't work for you.",
   "rung": "commands",
-  "newcomerProblem": "Typing out a long prompt is slow, and you think faster than you type.",
+  "newcomerProblem": "You want to talk instead of type, but your voice can't be sent to a server — or /voice isn't available to you.",
+  "insteadOf": {
+    "builtIn": "/voice",
+    "summary": "Claude Code has voice built in. Type /voice, then hold space and speak. It needs no setup, understands coding words, and is free.",
+    "useThisWhen": [
+      "Your voice has to stay on this computer. The built-in one sends your recording to Anthropic to be turned into text; this one never sends anything anywhere.",
+      "You sign in with an API key, Bedrock, Vertex or Foundry rather than a Claude.ai account — the built-in one is unavailable then.",
+      "You're working over SSH or on a remote machine, where the built-in one can't reach your microphone.",
+      "Your workplace has turned the built-in one off.",
+      "You also want to talk in your browser, your editor, and everywhere else — not only in Claude Code."
+    ]
+  },
   "requires": {
     "minClaudeVersion": "2.1.145",
     "git": false,
@@ -24,9 +35,9 @@
       "to": ".claude/skills/talk/SKILL.md"
     }
   ],
-  "tryThis": ".claude/scripts/talk.sh",
-  "tryThisExplain": "Run that in a second terminal, then speak. Your words appear wherever your cursor is.",
-  "explain": "Your computer listens through the microphone and types out what you say, wherever your cursor happens to be — including the box where you talk to Claude. The listening part runs entirely on your own machine, so your voice never leaves it and there is nothing to pay for.",
-  "honestLimit": "This types into whatever window you're already in — it doesn't add a microphone button inside Claude Code. It also needs a one-time setup on your computer first, and the kit tells you exactly what to run.",
+  "tryThis": "/voice",
+  "tryThisExplain": "Try the built-in one first — it needs no setup. If it isn't available or you need your voice to stay on this computer, run .claude/scripts/talk.sh instead.",
+  "explain": "Claude Code already has listening built in, and for most people that is the one to use. This kit is the alternative for when it can't be used: your computer listens through the microphone and types out what you say, wherever your cursor happens to be. The listening happens entirely on your own machine, so no recording is ever sent anywhere, and it works in every other program too.",
+  "honestLimit": "The built-in /voice is easier and understands coding words better. This one needs a one-time setup, is less accurate, and types into whatever window you're in — neither adds a microphone button inside Claude Code.",
   "uninstallNote": "This removes the shortcut. Anything you installed on your computer yourself stays where it is."
 }

@@ -1,0 +1,22 @@
+{
+  "id": "context-rescue",
+  "title": "Claude doesn't lose track when the conversation gets long",
+  "blurb": "Long conversations get shortened automatically to free up room, and details get dropped when that happens. This writes down where you'd got to first, so nothing important disappears.",
+  "rung": "memory",
+  "newcomerProblem": "After a long session Claude suddenly forgets what you were doing and starts redoing work you already finished.",
+  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "installs": [
+    { "kind": "hook", "name": "save-before-forgetting", "from": "hooks/save-before-forgetting.sh",
+      "to": ".claude/hooks/save-before-forgetting.sh", "executable": true },
+    { "kind": "settings", "scope": "project",
+      "patch": { "hooks": { "PreCompact": [ { "matcher": "auto",
+        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-before-forgetting.sh" } ] },
+        { "matcher": "manual",
+        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-before-forgetting.sh" } ] } ] } } }
+  ],
+  "tryThis": "Read .claude/where-we-got-to.md",
+  "tryThisExplain": "After a long session, ask Claude that to pick up exactly where you left off.",
+  "explain": "Claude can only hold so much of a conversation at once. When it fills up, older parts get squeezed into a short summary, and specifics get lost — which files you touched, what you already tried, what didn't work. This notices that moment coming and writes the important parts to a file first, so they can be read back afterwards.",
+  "honestLimit": "It saves what can be read from your project — changed files, recent commits, the branch. It can't save the parts of the conversation that were only ever spoken about.",
+  "uninstallNote": "The note file it wrote is left where it is, in case you still want it."
+}

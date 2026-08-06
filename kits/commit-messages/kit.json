@@ -1,0 +1,18 @@
+{
+  "id": "commit-messages",
+  "title": "Claude writes your commit messages",
+  "blurb": "Turns what you actually changed into a clear commit message, so your history is still readable months later.",
+  "rung": "commands",
+  "newcomerProblem": "You write \"fix\" or \"update\" as the message because thinking of a good one is the last thing between you and being done.",
+  "requires": { "minClaudeVersion": "2.1.145", "git": true },
+  "installs": [
+    { "kind": "skill", "name": "commit", "from": "skills/commit/SKILL.md", "to": ".claude/skills/commit/SKILL.md" },
+    { "kind": "settings", "scope": "local",
+      "patch": { "permissions": { "allow": ["Bash(git diff *)", "Bash(git status *)", "Bash(git log *)"] } } }
+  ],
+  "tryThis": "/commit",
+  "tryThisExplain": "Stage some changes with git add, then type this in Claude Code.",
+  "explain": "Claude reads the changes you have staged and writes the message for you, describing what changed and why rather than repeating the file names. It shows you the message first — nothing is committed until you say so.",
+  "honestLimit": "It can only describe what it can see in the change. If the reason lives in a ticket or a conversation, you still need to add that yourself.",
+  "uninstallNote": null
+}

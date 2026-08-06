@@ -1,0 +1,16 @@
+{
+  "id": "explore-first",
+  "title": "Claude finds its way around before changing anything",
+  "blurb": "Searching a big project fills the conversation with file after file, and then there's no room left for the actual work. This does the looking somewhere else and brings back just the answer.",
+  "rung": "helpers",
+  "newcomerProblem": "You ask where something lives and Claude reads twenty files, then runs out of room mid-task.",
+  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "installs": [
+    { "kind": "skill", "name": "explore", "from": "skills/explore/SKILL.md", "to": ".claude/skills/explore/SKILL.md" }
+  ],
+  "tryThis": "/explore how login works",
+  "tryThisExplain": "Ask about any part of your project you don't know yet.",
+  "explain": "Searching through a project is noisy work — lots of files get read, and most of them turn out not to matter. This sends that job to a separate helper with its own space. It does the reading over there and comes back with just what it found, so your conversation stays clear for the work you actually wanted to do.",
+  "honestLimit": "The helper starts fresh, so it doesn't know what you already discussed. Tell it what you're looking for in full.",
+  "uninstallNote": null
+}

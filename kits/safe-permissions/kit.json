@@ -1,0 +1,22 @@
+{
+  "id": "safe-permissions",
+  "title": "Claude stops asking permission for safe things",
+  "blurb": "Claude keeps interrupting to ask before harmless things like listing files or checking git. This lets those through, so the only questions you get are the ones actually worth reading.",
+  "rung": "permissions",
+  "newcomerProblem": "You get asked to approve so many harmless commands that you stop reading them, or switch off the checks entirely.",
+  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "installs": [
+    { "kind": "settings", "scope": "local",
+      "patch": { "permissions": { "allow": [
+        "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git branch *)",
+        "Bash(git show *)", "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)",
+        "Bash(wc *)", "Bash(pwd)", "Bash(which *)", "Bash(file *)", "Bash(du *)",
+        "Bash(node --version)", "Bash(npm --version)", "Bash(python3 --version)"
+      ] } } }
+  ],
+  "tryThis": "What changed in this project recently?",
+  "tryThisExplain": "Ask Claude that. It should look through your history without stopping to ask.",
+  "explain": "Claude asks before running commands on your computer. Most of those commands only look at things and change nothing, so being asked about them is just noise. This tells Claude that a specific list of look-only commands is fine to run, and leaves everything that changes or deletes anything still needing your say-so.",
+  "honestLimit": "Only look-only commands are allowed through. Anything that writes, deletes, installs, or sends still stops and asks you.",
+  "uninstallNote": null
+}

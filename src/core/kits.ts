@@ -153,8 +153,13 @@ export function loadKits(kitsDir: string = bundledKitsDir()): Kit[] {
  * Kits not listed here sort after the ones that are.
  */
 export const KIT_ORDER: string[] = [
-  "deletion-warning",
+  "deletion-warning", // losing work is the worst thing that happens to a beginner
+  "safe-permissions", // prompt fatigue is what pushes people to switch checks off
   "code-reviewer",
+  "commit-messages",
+  "scope-guard",
+  "context-rescue",
+  "explore-first",
   "voice-input",
   "browser-testing",
 ];
@@ -192,6 +197,55 @@ export function targetPathFor(kit: Kit, entry: InstallEntry, repo: RepoInfo): st
     default:
       return path.join(repo.projectDir, entry.to);
   }
+}
+
+/**
+ * True when every value a settings patch would add is already present. Used to
+ * detect settings-only kits, which leave no file behind to look for.
+ */
+function settingsPatchApplied(filePath: string, patch: Record<string, unknown>): boolean {
+  let settings: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return false;
+    settings = parsed as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+
+  for (const [topKey, topValue] of Object.entries(patch)) {
+    const current = settings[topKey];
+
+    if (topKey === "permissions" && typeof topValue === "object" && topValue !== null) {
+      if (typeof current !== "object" || current === null) return false;
+      for (const [listName, values] of Object.entries(topValue as Record<string, unknown>)) {
+        if (!Array.isArray(values)) continue;
+        const have = (current as Record<string, unknown>)[listName];
+        if (!Array.isArray(have)) return false;
+        if (!values.every((v) => (have as unknown[]).includes(v))) return false;
+      }
+      continue;
+    }
+
+    if (topKey === "hooks" && typeof topValue === "object" && topValue !== null) {
+      if (typeof current !== "object" || current === null) return false;
+      for (const [eventName, entries] of Object.entries(topValue as Record<string, unknown>)) {
+        if (!Array.isArray(entries)) continue;
+        const have = (current as Record<string, unknown>)[eventName];
+        if (!Array.isArray(have)) return false;
+        for (const ourEntry of entries) {
+          const command = extractCommand(ourEntry);
+          const matcher = matcherOf(ourEntry);
+          if (command && !(have as unknown[]).some((e) => isOurHookEntry(e, command, matcher))) return false;
+        }
+      }
+      continue;
+    }
+
+    if (JSON.stringify(current) !== JSON.stringify(topValue)) return false;
+  }
+
+  return true;
 }
 
 /** Kits needing a user-scope MCP server can't be installed by writing files. */
@@ -316,14 +370,30 @@ function describeSettingsPatch(patch: Record<string, unknown>): string {
 // Install / uninstall
 // ---------------------------------------------------------------------------
 
-/** Our hook entries are tagged so uninstall removes exactly ours. */
-function isOurHookEntry(entry: unknown, command: string): boolean {
+/**
+ * Identifies one of our hook entries so uninstall removes exactly ours.
+ *
+ * The matcher is part of the identity, not just the command: a kit may
+ * register the same script under several matchers (context-rescue uses both
+ * `auto` and `manual`), and matching on command alone would make each entry
+ * evict the previous one, leaving only the last.
+ */
+function isOurHookEntry(entry: unknown, command: string, matcher?: string): boolean {
   if (typeof entry !== "object" || entry === null) return false;
   const hooks = (entry as { hooks?: unknown }).hooks;
   if (!Array.isArray(hooks)) return false;
-  return hooks.some(
+  const commandMatches = hooks.some(
     (h) => typeof h === "object" && h !== null && (h as { command?: unknown }).command === command,
   );
+  if (!commandMatches) return false;
+  if (matcher === undefined) return true;
+  return (entry as { matcher?: unknown }).matcher === matcher;
+}
+
+function matcherOf(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  const m = (entry as { matcher?: unknown }).matcher;
+  return typeof m === "string" ? m : undefined;
 }
 
 function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"): Operation[] {
@@ -413,7 +483,8 @@ function applySettingsPatch(
 
         for (const ourEntry of eventEntries) {
           const command = extractCommand(ourEntry);
-          const withoutOurs = current.filter((e) => !(command && isOurHookEntry(e, command)));
+          const matcher = matcherOf(ourEntry);
+          const withoutOurs = current.filter((e) => !(command && isOurHookEntry(e, command, matcher)));
           current.length = 0;
           current.push(...withoutOurs);
           if (mode === "install") current.push(ourEntry);
@@ -497,9 +568,17 @@ export function isKitInstalled(kit: Kit, repo: RepoInfo): boolean {
     return fileEntries.every((entry) => fs.existsSync(targetPathFor(kit, entry, repo)));
   }
 
-  // MCP-only kits leave no files of their own — look for the server entry.
+  // Kits that only patch settings leave no files at all, so detection has to
+  // look for the values themselves — otherwise installing twice would silently
+  // duplicate them (acceptance #11).
   const mcpEntries = kit.installs.filter((e) => e.kind === "mcp");
-  if (mcpEntries.length === 0) return false;
+  if (mcpEntries.length === 0) {
+    const settingsEntries = kit.installs.filter((e) => e.kind === "settings");
+    if (settingsEntries.length === 0) return false;
+    return settingsEntries.every((entry) =>
+      settingsPatchApplied(targetPathFor(kit, entry, repo), entry.patch),
+    );
+  }
   return mcpEntries.every((entry) => {
     if (entry.scope === "user") return false;
     try {

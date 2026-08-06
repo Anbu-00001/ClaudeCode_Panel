@@ -172,6 +172,15 @@ describe("voice-input: talking instead of typing", () => {
   });
 
   it("says plainly that it can't add a button inside Claude Code", () => {
-    expect(kit("voice-input").honestLimit).toContain("doesn't add a microphone button");
+    expect(kit("voice-input").honestLimit).toContain("microphone button");
+  });
+
+  it("points at the built-in /voice first, rather than rebuilding it (§1.3)", () => {
+    const k = kit("voice-input");
+    expect(k.blurb).toContain("/voice");
+    expect(k.tryThis).toBe("/voice");
+    // The reasons to prefer this over the built-in must be stated, not implied.
+    const insteadOf = (k as unknown as { insteadOf?: { useThisWhen?: string[] } }).insteadOf;
+    expect(insteadOf?.useThisWhen?.length ?? 0).toBeGreaterThan(2);
   });
 });

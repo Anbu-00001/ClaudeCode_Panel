@@ -1,0 +1,22 @@
+{
+  "id": "scope-guard",
+  "title": "Claude checks before changing something load-bearing",
+  "blurb": "Ask for a small fix and Claude sometimes rewrites your setup files, your lockfile, or your instructions too. This makes it stop and check with you before touching anything like that.",
+  "rung": "automaticChecks",
+  "newcomerProblem": "You asked for one small change and Claude quietly edited files you never mentioned.",
+  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "installs": [
+    { "kind": "hook", "name": "guard-important-files", "from": "hooks/guard-important-files.sh",
+      "to": ".claude/hooks/guard-important-files.sh", "executable": true },
+    { "kind": "settings", "scope": "project",
+      "patch": { "hooks": { "PreToolUse": [ { "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-important-files.sh" } ] } ] } } },
+    { "kind": "claudemd", "blockId": "scope-guard",
+      "content": "## Staying in scope\n\nOnly change the files needed for what was actually asked.\n\n- Do not rename, reformat, or reorganise anything that wasn't part of the request.\n- Do not \"tidy up\" nearby code while you're in a file.\n- If a fix seems to need changes elsewhere, say so and ask first.\n- If a request is ambiguous, ask rather than picking the broader reading." }
+  ],
+  "tryThis": "Ask Claude to make a small change, then check git status",
+  "tryThisExplain": "Only the files you expected should show up as changed.",
+  "explain": "Two things happen here. Claude gets a written rule to only touch what you asked about. And a check runs automatically before it edits certain files — your setup, your instructions, lockfiles, build files — so those always need your say-so, no matter what Claude decided.",
+  "honestLimit": "It can't know what you asked for, so it guards a fixed list of files that are costly to get wrong. It won't catch every unwanted edit.",
+  "uninstallNote": null
+}
