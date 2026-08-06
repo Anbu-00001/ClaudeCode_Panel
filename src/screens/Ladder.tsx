@@ -4,10 +4,13 @@ import React, { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { RUNG_LABELS, RUNG_ORDER, type LadderState } from "../core/detect.js";
-import { KIT_TITLES } from "../data/kit-titles.js";
+import { type Kit, isKitInstalled } from "../core/kits.js";
 
 interface LadderProps {
   state: LadderState;
+  kits: Kit[];
+  onOpenKits: () => void;
+  onOpenKit?: (kit: Kit) => void;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -16,7 +19,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function Ladder({ state }: LadderProps) {
+export function Ladder({ state, kits, onOpenKits, onOpenKit }: LadderProps) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -25,20 +28,28 @@ export function Ladder({ state }: LadderProps) {
   const projectName = path.basename(state.repo.projectDir);
   const startFromScratch = state.countOn === 0;
 
+  // Hand-curated order, not a score (§10.1): the kits file order is the
+  // priority order, filtered to what this project doesn't already have.
   const suggestions = useMemo(() => {
-    const unfulfilled = KIT_TITLES.filter((k) => !state.rungs[k.rung]);
-    return startFromScratch ? unfulfilled.slice(0, 1) : unfulfilled.slice(0, 3);
-  }, [state, startFromScratch]);
+    const available = kits.filter((k) => !isKitInstalled(k, state.repo));
+    return startFromScratch ? available.slice(0, 1) : available.slice(0, 3);
+  }, [kits, state.repo, startFromScratch]);
 
-  const items: ListItem[] = useMemo(() => {
-    const kitItems: ListItem[] = suggestions.map((k) => ({ key: k.id, label: k.title }));
-    const navItems: ListItem[] = [
+  const items: ListItem[] = useMemo(
+    () => [
+      ...suggestions.map((k) => ({ key: `kit:${k.id}`, label: k.title })),
+      { key: "kits", label: "See everything you can set up →" },
       { key: "explore", label: "Explore everything →" },
       { key: "manage", label: "Manage what you have →" },
       { key: "spending", label: "Spending →" },
-    ];
-    return [...kitItems, ...navItems];
-  }, [suggestions]);
+    ],
+    [suggestions],
+  );
+
+  const highlighted = items[selectedIndex];
+  const highlightedKit = highlighted?.key.startsWith("kit:")
+    ? suggestions.find((k) => `kit:${k.id}` === highlighted.key)
+    : undefined;
 
   useInput((input, key) => {
     if (input === "?") {
@@ -50,13 +61,21 @@ export function Ladder({ state }: LadderProps) {
       setNotice(null);
       return;
     }
-    if (input === "q") {
-      exit();
-    }
+    if (input === "q") exit();
   });
 
   function handleSubmit(item: ListItem) {
-    setNotice(`"${item.label}" is coming in a later milestone — this build only shows where you stand.`);
+    if (item.key === "kits") {
+      onOpenKits();
+      return;
+    }
+    if (item.key.startsWith("kit:")) {
+      const kit = suggestions.find((k) => `kit:${k.id}` === item.key);
+      if (kit && onOpenKit) onOpenKit(kit);
+      else onOpenKits();
+      return;
+    }
+    setNotice(`"${item.label.replace(" →", "")}" is coming in a later milestone.`);
   }
 
   const footerHints: FooterHint[] = [
@@ -119,6 +138,13 @@ export function Ladder({ state }: LadderProps) {
                 isFocused={!showHelp}
               />
             </Box>
+
+            {/* What's under the cursor, explained without opening it. */}
+            {highlightedKit ? (
+              <Box marginTop={1} borderStyle="round" borderDimColor paddingX={1}>
+                <Text>{highlightedKit.blurb}</Text>
+              </Box>
+            ) : null}
 
             {notice ? (
               <Box marginTop={1}>

@@ -1,0 +1,43 @@
+{
+  "id": "deletion-warning",
+  "title": "Claude warns you before deleting anything big",
+  "blurb": "Claude stops and checks with you first when it's about to delete a lot of files, wipe a database, or throw away work you haven't saved.",
+  "rung": "automaticChecks",
+  "requires": {
+    "minClaudeVersion": "2.1.145",
+    "git": false
+  },
+  "installs": [
+    {
+      "kind": "hook",
+      "name": "warn-before-delete",
+      "from": "hooks/warn-before-delete.sh",
+      "to": ".claude/hooks/warn-before-delete.sh",
+      "executable": true
+    },
+    {
+      "kind": "settings",
+      "scope": "project",
+      "patch": {
+        "hooks": {
+          "PreToolUse": [
+            {
+              "matcher": "Bash|Edit|Write",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/warn-before-delete.sh"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "tryThis": "rm -rf src/",
+  "tryThisExplain": "Ask Claude to delete a folder you care about. It should stop and check with you first.",
+  "explain": "Claude can run commands on your computer, and some of them can't be taken back. This watches for the dangerous ones and makes Claude pause and ask you before it goes ahead. It only speaks up when something is genuinely hard to undo, so it stays quiet during normal work.",
+  "honestLimit": "This catches common destructive commands. It won't catch everything — treat it as a seatbelt, not a wall.",
+  "uninstallNote": null
+}

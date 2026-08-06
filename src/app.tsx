@@ -1,9 +1,12 @@
 import { Text, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { detectLadderState, type LadderState } from "./core/detect.js";
+import { type Kit, loadKits } from "./core/kits.js";
+import { KitDetail } from "./screens/KitDetail.js";
+import { Kits } from "./screens/Kits.js";
 import { Ladder } from "./screens/Ladder.js";
 
-type Screen = "ladder";
+type Screen = { name: "ladder" } | { name: "kits" } | { name: "kitDetail"; kit: Kit };
 
 function useTerminalSize() {
   const { stdout } = useStdout();
@@ -25,20 +28,48 @@ function useTerminalSize() {
   return size;
 }
 
-/** Screen router. Only Ladder exists in M1 — the switch is here so later
- * milestones add cases instead of restructuring. */
 export function App() {
   const { columns, rows } = useTerminalSize();
-  const [screen] = useState<Screen>("ladder");
-  const [state] = useState<LadderState>(() => detectLadderState());
+  const [screen, setScreen] = useState<Screen>({ name: "ladder" });
+  const [state, setState] = useState<LadderState>(() => detectLadderState());
+  const [kits] = useState<Kit[]>(() => loadKits());
 
   if (columns < 80 || rows < 24) {
     return <Text>ccpanel needs a window at least 80 columns wide.</Text>;
   }
 
-  switch (screen) {
+  /** Installing changes what's on disk, so the ladder is re-read on the way back. */
+  function backToKits() {
+    setState(detectLadderState());
+    setScreen({ name: "kits" });
+  }
+
+  switch (screen.name) {
+    case "kits":
+      return (
+        <Kits
+          kits={kits}
+          repo={state.repo}
+          onOpen={(kit) => setScreen({ name: "kitDetail", kit })}
+          onBack={() => {
+            setState(detectLadderState());
+            setScreen({ name: "ladder" });
+          }}
+        />
+      );
+
+    case "kitDetail":
+      return <KitDetail kit={screen.kit} repo={state.repo} onBack={backToKits} />;
+
     case "ladder":
     default:
-      return <Ladder state={state} />;
+      return (
+        <Ladder
+          state={state}
+          kits={kits}
+          onOpenKits={() => setScreen({ name: "kits" })}
+          onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
+        />
+      );
   }
 }
