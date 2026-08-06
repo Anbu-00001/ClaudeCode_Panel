@@ -11,6 +11,8 @@ interface LadderProps {
   kits: Kit[];
   onOpenKits: () => void;
   onOpenKit?: (kit: Kit) => void;
+  onOpenExplore?: () => void;
+  onOpenCommands?: () => void;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -19,7 +21,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function Ladder({ state, kits, onOpenKits, onOpenKit }: LadderProps) {
+export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands }: LadderProps) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -39,7 +41,8 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit }: LadderProps) {
     () => [
       ...suggestions.map((k) => ({ key: `kit:${k.id}`, label: k.title })),
       { key: "kits", label: "See everything you can set up →" },
-      { key: "explore", label: "Explore everything →" },
+      { key: "explore", label: "Explore what Claude Code can do →" },
+      { key: "commands", label: "Look up something you can type →" },
       { key: "manage", label: "Manage what you have →" },
       { key: "spending", label: "Spending →" },
     ],
@@ -67,6 +70,14 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit }: LadderProps) {
   function handleSubmit(item: ListItem) {
     if (item.key === "kits") {
       onOpenKits();
+      return;
+    }
+    if (item.key === "explore" && onOpenExplore) {
+      onOpenExplore();
+      return;
+    }
+    if (item.key === "commands" && onOpenCommands) {
+      onOpenCommands();
       return;
     }
     if (item.key.startsWith("kit:")) {

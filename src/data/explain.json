@@ -1,0 +1,116 @@
+{
+  "generated": "2026-08-06",
+  "note": "Hand-written. Rules: no term used before it is defined, no sentence over 20 words, every entry passes the read-aloud test.",
+  "entries": [
+    {
+      "id": "instructions",
+      "plainName": "Project instructions",
+      "oneLine": "A note Claude reads every time, so you stop repeating yourself",
+      "whatItIs": "A plain text file in your project that Claude reads at the start of every conversation. You write what someone joining your project would need to know. Claude then has it from the first message.",
+      "whenYouWantIt": "When you explain the same thing twice. How to run the tests. Which folder things go in. A rule your team follows.",
+      "example": "You write \"run npm test before saying you're done\". From then on Claude does that without being asked.",
+      "kitId": "scope-guard",
+      "docsUrl": "https://code.claude.com/docs/en/memory"
+    },
+    {
+      "id": "permissions",
+      "plainName": "Permissions",
+      "oneLine": "Your say over what Claude may do without stopping to ask",
+      "whatItIs": "Claude asks before running commands on your computer. You can mark some as always fine, and others as never allowed. Everything else keeps asking.",
+      "whenYouWantIt": "When approving the same harmless command over and over has turned into noise you click through without reading.",
+      "example": "You allow looking at your git history. Claude checks it freely, but still asks before deleting anything.",
+      "kitId": "safe-permissions",
+      "docsUrl": "https://code.claude.com/docs/en/permissions"
+    },
+    {
+      "id": "commands",
+      "plainName": "Commands",
+      "oneLine": "A short word you type to run something you do often",
+      "whatItIs": "Anything you ask Claude repeatedly can be saved and given a name. You type a slash and the name, and it runs the whole thing.",
+      "whenYouWantIt": "When you keep typing out the same request, word for word, several times a week.",
+      "example": "Instead of describing how you want commit messages written, you type /commit and get one.",
+      "kitId": "commit-messages",
+      "docsUrl": "https://code.claude.com/docs/en/skills"
+    },
+    {
+      "id": "skills",
+      "plainName": "Abilities",
+      "oneLine": "Instructions Claude picks up only when they are relevant",
+      "whatItIs": "A set of steps saved in your project. Claude reads it only when the job calls for it, so it costs nothing the rest of the time. You can also run it yourself by name.",
+      "whenYouWantIt": "When a task has real steps to follow, and you want them done the same way every time.",
+      "example": "An ability describing your release process means anyone on the team gets the same steps, in the same order.",
+      "kitId": "explore-first",
+      "docsUrl": "https://code.claude.com/docs/en/skills"
+    },
+    {
+      "id": "helpers",
+      "plainName": "Helpers",
+      "oneLine": "A second Claude that works on one job on its own",
+      "whatItIs": "A helper is a second Claude that works on one job in its own conversation. It cannot see your main chat, so it starts clean and reports back only what it found.",
+      "whenYouWantIt": "When a job is big enough to get in the way. Reading a long set of changes, searching a large project, writing tests.",
+      "example": "A reviewer helper reads your changes and reports just the problems, without filling your conversation with whole files.",
+      "kitId": "code-reviewer",
+      "docsUrl": "https://code.claude.com/docs/en/sub-agents"
+    },
+    {
+      "id": "tools",
+      "plainName": "Tools",
+      "oneLine": "Something you plug in so Claude can reach outside your files",
+      "whatItIs": "On its own Claude can read and write files. A tool connects it to something else, like a browser, a database, or your issue tracker. Then it can look things up and act there too.",
+      "whenYouWantIt": "When you keep copying information into the conversation by hand from somewhere else.",
+      "example": "Connect a browser and Claude can open your site, click through it, and tell you what is broken.",
+      "kitId": "browser-testing",
+      "docsUrl": "https://code.claude.com/docs/en/mcp"
+    },
+    {
+      "id": "connectors",
+      "plainName": "Tools from claude.ai",
+      "oneLine": "Tools you already switched on in your Claude account",
+      "whatItIs": "Tools connected to your account on the web, rather than set up in this folder. They follow you everywhere you use Claude.",
+      "whenYouWantIt": "When you already connected something on claude.ai and want it here too.",
+      "example": "A calendar connected on the web is available in your terminal without setting it up again.",
+      "kitId": null,
+      "docsUrl": "https://code.claude.com/docs/en/mcp"
+    },
+    {
+      "id": "bundles",
+      "plainName": "Bundles",
+      "oneLine": "Several extras packaged together and installed in one step",
+      "whatItIs": "Someone groups a set of abilities, helpers and tools together. Installing the bundle gets you all of it at once, and updates come as a set.",
+      "whenYouWantIt": "When a whole team should have the same setup, rather than everyone assembling it themselves.",
+      "example": "Your company publishes a bundle with its own review helper and coding rules. Everyone installs one thing.",
+      "kitId": null,
+      "docsUrl": "https://code.claude.com/docs/en/plugins"
+    },
+    {
+      "id": "automaticChecks",
+      "plainName": "Automatic checks",
+      "oneLine": "Something that runs by itself at a set moment",
+      "whatItIs": "A check that runs on its own at a set moment. It might run before Claude uses a tool, or after it edits a file. It runs whatever Claude decided, so it holds even when Claude gets it wrong.",
+      "whenYouWantIt": "When a rule must hold every single time, rather than most of the time.",
+      "example": "A check runs before anything is deleted, and stops to ask you if the deletion looks serious.",
+      "kitId": "deletion-warning",
+      "docsUrl": "https://code.claude.com/docs/en/hooks"
+    },
+    {
+      "id": "memory",
+      "plainName": "Memory",
+      "oneLine": "How much of the conversation Claude can hold at once",
+      "whatItIs": "Claude can only keep so much of a conversation in mind. When it fills up, older parts get squeezed into a summary, and detail is lost.",
+      "whenYouWantIt": "When long sessions start going in circles, or Claude forgets something you agreed earlier.",
+      "example": "Before the conversation is shortened, the important parts get written to a file so nothing is lost.",
+      "kitId": "context-rescue",
+      "docsUrl": "https://code.claude.com/docs/en/context-window"
+    },
+    {
+      "id": "parallelWork",
+      "plainName": "Parallel work",
+      "oneLine": "Sending a job off to run while you carry on",
+      "whatItIs": "Long jobs can run in the background while you keep working. You get told when they finish, instead of sitting and watching.",
+      "whenYouWantIt": "When something will take minutes and you have other things to do.",
+      "example": "You send a large piece of work off to run, keep going on something else, and check the result later.",
+      "kitId": null,
+      "docsUrl": "https://code.claude.com/docs/en/sub-agents"
+    }
+  ]
+}

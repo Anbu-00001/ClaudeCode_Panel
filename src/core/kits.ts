@@ -91,6 +91,9 @@ export const kitSchema = z.looseObject({
   installs: z.array(installEntrySchema),
   /** The situation a newcomer is in when they need this (§2). Drives grouping. */
   newcomerProblem: z.string().nullish(),
+  /** Kits Claude asked for, rather than ones drawn from the spec. */
+  chosenByClaude: z.boolean().optional(),
+  whyClaudeWantsThis: z.string().nullish(),
   tryThis: z.string().nullish(),
   tryThisExplain: z.string().nullish(),
   explain: z.string(),
@@ -158,6 +161,7 @@ export const KIT_ORDER: string[] = [
   "code-reviewer",
   "commit-messages",
   "scope-guard",
+  "own-mistakes",
   "context-rescue",
   "explore-first",
   "voice-input",

@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node dist/cli.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "refresh-commands": "node scripts/refresh-commands.mjs"
   },
   "dependencies": {
     "ink": "^7.1.1",

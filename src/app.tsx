@@ -2,11 +2,18 @@ import { Text, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { detectLadderState, type LadderState } from "./core/detect.js";
 import { type Kit, loadKits } from "./core/kits.js";
+import { Commands } from "./screens/Commands.js";
+import { Explore } from "./screens/Explore.js";
 import { KitDetail } from "./screens/KitDetail.js";
 import { Kits } from "./screens/Kits.js";
 import { Ladder } from "./screens/Ladder.js";
 
-type Screen = { name: "ladder" } | { name: "kits" } | { name: "kitDetail"; kit: Kit };
+type Screen =
+  | { name: "ladder" }
+  | { name: "kits" }
+  | { name: "kitDetail"; kit: Kit }
+  | { name: "explore" }
+  | { name: "commands" };
 
 function useTerminalSize() {
   const { stdout } = useStdout();
@@ -61,6 +68,22 @@ export function App() {
     case "kitDetail":
       return <KitDetail kit={screen.kit} repo={state.repo} onBack={backToKits} />;
 
+    case "explore":
+      return (
+        <Explore
+          kits={kits}
+          repo={state.repo}
+          onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
+          onBack={() => {
+            setState(detectLadderState());
+            setScreen({ name: "ladder" });
+          }}
+        />
+      );
+
+    case "commands":
+      return <Commands onBack={() => setScreen({ name: "ladder" })} />;
+
     case "ladder":
     default:
       return (
@@ -69,6 +92,8 @@ export function App() {
           kits={kits}
           onOpenKits={() => setScreen({ name: "kits" })}
           onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
+          onOpenExplore={() => setScreen({ name: "explore" })}
+          onOpenCommands={() => setScreen({ name: "commands" })}
         />
       );
   }
