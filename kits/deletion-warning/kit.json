@@ -3,6 +3,7 @@
   "title": "Claude warns you before deleting anything big",
   "blurb": "Claude stops and checks with you first when it's about to delete a lot of files, wipe a database, or throw away work you haven't saved.",
   "rung": "automaticChecks",
+  "newcomerProblem": "Claude runs a command that deletes something you needed, and it's already gone.",
   "requires": {
     "minClaudeVersion": "2.1.145",
     "git": false

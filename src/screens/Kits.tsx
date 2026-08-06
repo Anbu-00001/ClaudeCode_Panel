@@ -77,7 +77,17 @@ export function Kits({ kits, repo, onOpen, onBack }: KitsProps) {
                 borderDimColor
                 paddingX={1}
               >
+                {current.newcomerProblem ? (
+                  <Box marginBottom={1}>
+                    <Text color="cyan">When this helps: {current.newcomerProblem}</Text>
+                  </Box>
+                ) : null}
                 <Text>{current.blurb}</Text>
+                {current.honestLimit ? (
+                  <Box marginTop={1}>
+                    <Text dimColor>{current.honestLimit}</Text>
+                  </Box>
+                ) : null}
                 <Box marginTop={1}>
                   <Text dimColor>Part of: {RUNG_LABELS[current.rung] ?? current.rung}</Text>
                 </Box>

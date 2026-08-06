@@ -50,6 +50,25 @@ const installEntrySchema = z.discriminatedUnion("kind", [
     to: z.string(),
   }),
   z.looseObject({
+    kind: z.literal("script"),
+    name: z.string(),
+    from: z.string(),
+    to: z.string(),
+    executable: z.boolean().optional(),
+  }),
+  z.looseObject({
+    kind: z.literal("mcp"),
+    name: z.string(),
+    scope: z.enum(["project", "user"]),
+    server: z.looseObject({
+      type: z.string().optional(),
+      command: z.string().optional(),
+      args: z.array(z.string()).optional(),
+      url: z.string().optional(),
+      env: z.record(z.string(), z.string()).optional(),
+    }),
+  }),
+  z.looseObject({
     kind: z.literal("settings"),
     scope: z.enum(["project", "local", "user"]),
     patch: z.record(z.string(), z.unknown()),
@@ -70,6 +89,8 @@ export const kitSchema = z.looseObject({
     .looseObject({ minClaudeVersion: z.string().nullish(), git: z.boolean().optional() })
     .optional(),
   installs: z.array(installEntrySchema),
+  /** The situation a newcomer is in when they need this (§2). Drives grouping. */
+  newcomerProblem: z.string().nullish(),
   tryThis: z.string().nullish(),
   tryThisExplain: z.string().nullish(),
   explain: z.string(),
@@ -122,7 +143,25 @@ export function loadKits(kitsDir: string = bundledKitsDir()): Kit[] {
     kits.push({ ...result.data, rung: result.data.rung as RungId, dir });
   }
 
-  return kits.sort((a, b) => a.id.localeCompare(b.id));
+  return kits.sort((a, b) => orderOf(a.id) - orderOf(b.id) || a.id.localeCompare(b.id));
+}
+
+/**
+ * Hand-curated priority, not a score (§10.1). The deletion warning leads
+ * deliberately: it is the most valuable thing here for a beginner, and §9.5
+ * requires it to rank first among suggestions when it isn't installed.
+ * Kits not listed here sort after the ones that are.
+ */
+export const KIT_ORDER: string[] = [
+  "deletion-warning",
+  "code-reviewer",
+  "voice-input",
+  "browser-testing",
+];
+
+function orderOf(id: string): number {
+  const i = KIT_ORDER.indexOf(id);
+  return i === -1 ? KIT_ORDER.length : i;
 }
 
 export function getKit(id: string, kitsDir?: string): Kit | undefined {
@@ -146,9 +185,18 @@ export function targetPathFor(kit: Kit, entry: InstallEntry, repo: RepoInfo): st
       return settingsPathForScope(paths, entry.scope);
     case "claudemd":
       return paths.projectClaudeMdCandidates[0] as string;
+    case "mcp":
+      // User scope lives in ~/.claude.json, which v1 never writes (§5.1) —
+      // those are handed to `claude mcp add` instead of patched here.
+      return paths.projectMcp;
     default:
       return path.join(repo.projectDir, entry.to);
   }
+}
+
+/** Kits needing a user-scope MCP server can't be installed by writing files. */
+export function requiresUserScopeMcp(kit: Kit): boolean {
+  return kit.installs.some((e) => e.kind === "mcp" && e.scope === "user");
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +257,22 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
         conflict: false,
       });
       files.push({ displayPath, contents: entry.content });
+      continue;
+    }
+
+    if (entry.kind === "mcp") {
+      lines.push({
+        op: fs.existsSync(absolutePath) ? "change" : "create",
+        displayPath,
+        absolutePath,
+        note: "tells Claude how to start this tool when it needs it",
+        conflict: false,
+      });
+      if (entry.scope === "user") {
+        warnings.push(
+          "This one has to be added with a command instead, because it applies to all your folders.",
+        );
+      }
       continue;
     }
 
@@ -290,12 +354,34 @@ function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"
       continue;
     }
 
+    if (entry.kind === "mcp") {
+      // User scope would mean writing ~/.claude.json, which holds the OAuth
+      // session and is known to corrupt under concurrent writes. Skipped here
+      // and surfaced as a copyable `claude mcp add` command instead.
+      if (entry.scope === "user") continue;
+      ops.push({
+        kind: "patchJson",
+        filePath: absolutePath,
+        keyPath: ["mcpServers", entry.name],
+        mutate: (draft) => {
+          const servers = (draft["mcpServers"] as Record<string, unknown>) ?? {};
+          const next = { ...servers };
+          if (mode === "install") next[entry.name] = entry.server;
+          else delete next[entry.name];
+          if (Object.keys(next).length > 0) draft["mcpServers"] = next;
+          else delete draft["mcpServers"];
+        },
+      });
+      continue;
+    }
+
     if (mode === "uninstall") {
       ops.push({ kind: "deleteFile", filePath: absolutePath });
       continue;
     }
 
-    const executable = entry.kind === "hook" && entry.executable !== false;
+    const executable =
+      (entry.kind === "hook" || entry.kind === "script") && entry.executable !== false;
     ops.push({
       kind: "createFile",
       filePath: absolutePath,
@@ -403,9 +489,27 @@ export function uninstallKit(
 
 /** True when every file the kit installs is present (§9.3, acceptance #11). */
 export function isKitInstalled(kit: Kit, repo: RepoInfo): boolean {
-  const fileEntries = kit.installs.filter((e) => e.kind !== "settings" && e.kind !== "claudemd");
-  if (fileEntries.length === 0) return false;
-  return fileEntries.every((entry) => fs.existsSync(targetPathFor(kit, entry, repo)));
+  const fileEntries = kit.installs.filter(
+    (e) => e.kind !== "settings" && e.kind !== "claudemd" && e.kind !== "mcp",
+  );
+
+  if (fileEntries.length > 0) {
+    return fileEntries.every((entry) => fs.existsSync(targetPathFor(kit, entry, repo)));
+  }
+
+  // MCP-only kits leave no files of their own — look for the server entry.
+  const mcpEntries = kit.installs.filter((e) => e.kind === "mcp");
+  if (mcpEntries.length === 0) return false;
+  return mcpEntries.every((entry) => {
+    if (entry.scope === "user") return false;
+    try {
+      const parsed: unknown = JSON.parse(fs.readFileSync(targetPathFor(kit, entry, repo), "utf8"));
+      const servers = (parsed as { mcpServers?: Record<string, unknown> })?.mcpServers;
+      return Boolean(servers && entry.name in servers);
+    } catch {
+      return false;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
