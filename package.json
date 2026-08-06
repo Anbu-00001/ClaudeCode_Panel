@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "start": "npm run build && node dist/cli.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -31,5 +31,11 @@
     "tsx": "^4.23.8",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
-  }
+  },
+  "files": [
+    "dist",
+    "kits",
+    "LICENSE",
+    "README.md"
+  ]
 }
