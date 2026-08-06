@@ -5,7 +5,7 @@
   "rung": "helpers",
   "newcomerProblem": "You finish a change and aren't sure what you missed.",
   "requires": {
-    "minClaudeVersion": "2.1.145",
+    "minClaudeVersion": null,
     "git": true
   },
   "installs": [

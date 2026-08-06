@@ -6,7 +6,7 @@
   "newcomerProblem": "Claude says it's finished, and you're the one who discovers it doesn't compile.",
   "chosenByClaude": true,
   "whyClaudeWantsThis": "Without this, the only thing that notices my mistake is you, minutes later. I write code, say it's done, and you find the broken part. This tells me in seconds, while I can still fix it quietly. It also warns me when a file is generated, which I otherwise have no way to know — so I stop editing files that get wiped on the next build.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "requires": { "minClaudeVersion": null, "git": false },
   "installs": [
     { "kind": "hook", "name": "check-my-work", "from": "hooks/check-my-work.sh",
       "to": ".claude/hooks/check-my-work.sh", "executable": true },

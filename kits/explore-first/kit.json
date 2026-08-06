@@ -4,7 +4,7 @@
   "blurb": "Searching a big project fills the conversation with file after file, and then there's no room left for the actual work. This does the looking somewhere else and brings back just the answer.",
   "rung": "helpers",
   "newcomerProblem": "You ask where something lives and Claude reads twenty files, then runs out of room mid-task.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "requires": { "minClaudeVersion": null, "git": false },
   "installs": [
     { "kind": "skill", "name": "explore", "from": "skills/explore/SKILL.md", "to": ".claude/skills/explore/SKILL.md" }
   ],

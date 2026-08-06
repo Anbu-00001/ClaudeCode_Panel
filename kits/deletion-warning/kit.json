@@ -5,7 +5,7 @@
   "rung": "automaticChecks",
   "newcomerProblem": "Claude runs a command that deletes something you needed, and it's already gone.",
   "requires": {
-    "minClaudeVersion": "2.1.145",
+    "minClaudeVersion": null,
     "git": false
   },
   "installs": [

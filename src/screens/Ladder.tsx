@@ -2,6 +2,7 @@ import { Box, Text, useApp, useInput } from "ink";
 import path from "node:path";
 import React, { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
+import { FirstRun, Help } from "../components/Help.js";
 import { List, type ListItem } from "../components/List.js";
 import { RUNG_LABELS, RUNG_ORDER, type LadderState } from "../core/detect.js";
 import { type Kit, isKitInstalled } from "../core/kits.js";
@@ -14,6 +15,7 @@ interface LadderProps {
   onOpenExplore?: () => void;
   onOpenCommands?: () => void;
   onOpenManage?: () => void;
+  onOpenSpending?: () => void;
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -22,7 +24,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands, onOpenManage }: LadderProps) {
+export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands, onOpenManage, onOpenSpending }: LadderProps) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -85,6 +87,10 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOp
       onOpenManage();
       return;
     }
+    if (item.key === "spending" && onOpenSpending) {
+      onOpenSpending();
+      return;
+    }
     if (item.key.startsWith("kit:")) {
       const kit = suggestions.find((k) => `kit:${k.id}` === item.key);
       if (kit && onOpenKit) onOpenKit(kit);
@@ -129,16 +135,17 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOp
         </Box>
 
         {showHelp ? (
-          <Box marginTop={1} flexDirection="column" borderStyle="round" paddingX={1}>
-            <Text bold>Keys</Text>
-            <Text>↑ ↓ move</Text>
-            <Text>Enter do the thing under the cursor</Text>
-            <Text>? toggle this help</Text>
-            <Text>Esc close this</Text>
-            <Text>q quit</Text>
+          <Box marginTop={1}>
+            <Help />
           </Box>
         ) : (
           <>
+            {startFromScratch ? (
+              <Box marginTop={1}>
+                <FirstRun projectName={projectName} />
+              </Box>
+            ) : null}
+
             <Box marginTop={1}>
               <Text bold>
                 {startFromScratch ? "Start here — it takes about a minute." : "Set up in one step"}

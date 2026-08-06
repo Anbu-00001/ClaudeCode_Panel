@@ -4,7 +4,7 @@
   "blurb": "Claude keeps interrupting to ask before harmless things like listing files or checking git. This lets those through, so the only questions you get are the ones actually worth reading.",
   "rung": "permissions",
   "newcomerProblem": "You get asked to approve so many harmless commands that you stop reading them, or switch off the checks entirely.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "requires": { "minClaudeVersion": null, "git": false },
   "installs": [
     { "kind": "settings", "scope": "local",
       "patch": { "permissions": { "allow": [

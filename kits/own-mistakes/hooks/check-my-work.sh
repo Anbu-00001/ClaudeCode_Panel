@@ -14,6 +14,13 @@
 # in the project are used. Any error, timeout, or unknown situation stays silent.
 
 set +u
+
+# `timeout` is coreutils and normally present, but a hook must never fail
+# because a helper is missing. Falls back to running the command unbounded.
+bounded() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
+}
 trap 'exit 0' ERR
 
 BUDGET=8            # seconds; a slow check is worse than no check
@@ -78,7 +85,7 @@ fi
 # Nothing is installed and nothing is assumed: each checker runs only when both
 # the config and the tool are actually present.
 run_check() {
-  timeout "$BUDGET" "$@" 2>&1
+  bounded "$BUDGET" "$@" 2>&1
 }
 
 CHECK_OUTPUT=""

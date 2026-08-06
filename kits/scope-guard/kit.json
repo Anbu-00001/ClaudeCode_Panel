@@ -4,7 +4,7 @@
   "blurb": "Ask for a small fix and Claude sometimes rewrites your setup files, your lockfile, or your instructions too. This makes it stop and check with you before touching anything like that.",
   "rung": "automaticChecks",
   "newcomerProblem": "You asked for one small change and Claude quietly edited files you never mentioned.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "requires": { "minClaudeVersion": null, "git": false },
   "installs": [
     { "kind": "hook", "name": "guard-important-files", "from": "hooks/guard-important-files.sh",
       "to": ".claude/hooks/guard-important-files.sh", "executable": true },

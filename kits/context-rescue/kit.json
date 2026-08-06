@@ -4,7 +4,7 @@
   "blurb": "Long conversations get shortened automatically to free up room, and details get dropped when that happens. This writes down where you'd got to first, so nothing important disappears.",
   "rung": "memory",
   "newcomerProblem": "After a long session Claude suddenly forgets what you were doing and starts redoing work you already finished.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": false },
+  "requires": { "minClaudeVersion": null, "git": false },
   "installs": [
     { "kind": "hook", "name": "save-before-forgetting", "from": "hooks/save-before-forgetting.sh",
       "to": ".claude/hooks/save-before-forgetting.sh", "executable": true },

@@ -6,6 +6,7 @@ import { Commands } from "./screens/Commands.js";
 import { Explore } from "./screens/Explore.js";
 import { KitDetail } from "./screens/KitDetail.js";
 import { Manage } from "./screens/Manage.js";
+import { Spending } from "./screens/Spending.js";
 import { Kits } from "./screens/Kits.js";
 import { Ladder } from "./screens/Ladder.js";
 
@@ -15,7 +16,8 @@ type Screen =
   | { name: "kitDetail"; kit: Kit }
   | { name: "explore" }
   | { name: "commands" }
-  | { name: "manage" };
+  | { name: "manage" }
+  | { name: "spending" };
 
 function useTerminalSize() {
   const { stdout } = useStdout();
@@ -98,6 +100,9 @@ export function App() {
         />
       );
 
+    case "spending":
+      return <Spending onBack={() => setScreen({ name: "ladder" })} />;
+
     case "ladder":
     default:
       return (
@@ -109,6 +114,7 @@ export function App() {
           onOpenExplore={() => setScreen({ name: "explore" })}
           onOpenCommands={() => setScreen({ name: "commands" })}
           onOpenManage={() => setScreen({ name: "manage" })}
+          onOpenSpending={() => setScreen({ name: "spending" })}
         />
       );
   }

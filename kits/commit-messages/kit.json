@@ -4,7 +4,7 @@
   "blurb": "Turns what you actually changed into a clear commit message, so your history is still readable months later.",
   "rung": "commands",
   "newcomerProblem": "You write \"fix\" or \"update\" as the message because thinking of a good one is the last thing between you and being done.",
-  "requires": { "minClaudeVersion": "2.1.145", "git": true },
+  "requires": { "minClaudeVersion": null, "git": true },
   "installs": [
     { "kind": "skill", "name": "commit", "from": "skills/commit/SKILL.md", "to": ".claude/skills/commit/SKILL.md" },
     { "kind": "settings", "scope": "local",

@@ -5,7 +5,7 @@
   "rung": "tools",
   "newcomerProblem": "You changed something and don't know if the page still works.",
   "requires": {
-    "minClaudeVersion": "2.1.145",
+    "minClaudeVersion": null,
     "git": false,
     "network": true
   },

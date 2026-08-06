@@ -54,9 +54,17 @@ export function readFrontmatter(filePath: string): Record<string, unknown> {
  * memory gone before you type anything. Reported in words, never dollars —
  * per-skill cost does not exist in the data (§10.7).
  */
+/**
+ * Thresholds in characters of description. Claude Code caps each listed skill
+ * at 1,536 characters, so these split that range into three bands rather than
+ * being picked arbitrarily.
+ */
+const WEIGHT_LITTLE_MAX = 200;
+const WEIGHT_SOME_MAX = 600;
+
 function weigh(chars: number): SkillInfo["weight"] {
-  if (chars < 200) return "a little";
-  if (chars < 600) return "some";
+  if (chars < WEIGHT_LITTLE_MAX) return "a little";
+  if (chars < WEIGHT_SOME_MAX) return "some";
   return "a lot";
 }
 

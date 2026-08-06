@@ -86,7 +86,11 @@ export const kitSchema = z.looseObject({
   blurb: z.string(),
   rung: z.string(),
   requires: z
-    .looseObject({ minClaudeVersion: z.string().nullish(), git: z.boolean().optional() })
+    .looseObject({
+      /** null means we have not verified a minimum — never assert one we did not check. */
+      minClaudeVersion: z.string().nullish(),
+      git: z.boolean().optional(),
+    })
     .optional(),
   installs: z.array(installEntrySchema),
   /** The situation a newcomer is in when they need this (§2). Drives grouping. */

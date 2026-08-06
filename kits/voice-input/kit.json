@@ -16,7 +16,7 @@
     ]
   },
   "requires": {
-    "minClaudeVersion": "2.1.145",
+    "minClaudeVersion": null,
     "git": false,
     "setupOutsideClaude": true
   },

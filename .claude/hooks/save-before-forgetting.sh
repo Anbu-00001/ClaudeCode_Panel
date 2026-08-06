@@ -12,13 +12,6 @@
 # Fails open: any error and compaction proceeds untouched. It never blocks.
 
 set +u
-
-# `timeout` is coreutils and normally present, but a hook must never fail
-# because a helper is missing. Falls back to running the command unbounded.
-bounded() {
-  local secs="$1"; shift
-  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
-}
 trap 'exit 0' ERR
 
 INPUT=$(head -c 1000000 2>/dev/null | tr -d '\000' 2>/dev/null)
@@ -61,16 +54,16 @@ WHEN=$(date '+%Y-%m-%d %H:%M' 2>/dev/null)
   printf '.\n\n'
 
   printf '## Files changed but not yet saved to git\n\n'
-  if command -v git >/dev/null 2>&1 && bounded 2 git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    CHANGED=$(bounded 3 git -C "$CWD" status --porcelain 2>/dev/null | grep -v "where-we-got-to.md" | head -40)
+  if command -v git >/dev/null 2>&1 && timeout 2 git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    CHANGED=$(timeout 3 git -C "$CWD" status --porcelain 2>/dev/null | grep -v "where-we-got-to.md" | head -40)
     if [ -n "$CHANGED" ]; then printf '```\n%s\n```\n\n' "$CHANGED"
     else printf 'Nothing — everything is saved in git.\n\n'; fi
 
     printf '## Recent commits\n\n```\n'
-    bounded 3 git -C "$CWD" log --oneline -10 2>/dev/null
+    timeout 3 git -C "$CWD" log --oneline -10 2>/dev/null
     printf '```\n\n'
 
-    BRANCH=$(bounded 2 git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    BRANCH=$(timeout 2 git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
     [ -n "$BRANCH" ] && printf 'On branch: `%s`\n\n' "$BRANCH"
   else
     printf 'This folder is not tracked by git, so changed files could not be listed.\n\n'
