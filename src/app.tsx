@@ -1,5 +1,6 @@
-import { Text, useStdout } from "ink";
+import { Box, Text, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
+import { Banner } from "./components/Banner.js";
 import { detectLadderState, type LadderState } from "./core/detect.js";
 import { type Kit, loadKits } from "./core/kits.js";
 import { Commands } from "./screens/Commands.js";
@@ -105,17 +106,23 @@ export function App() {
 
     case "ladder":
     default:
+      // The banner rides on the home screen only — that is what a boot lands
+      // on, and repeating it above every screen would spend rows the lists
+      // need. It removes itself when the window is too small (see Banner).
       return (
-        <Ladder
-          state={state}
-          kits={kits}
-          onOpenKits={() => setScreen({ name: "kits" })}
-          onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
-          onOpenExplore={() => setScreen({ name: "explore" })}
-          onOpenCommands={() => setScreen({ name: "commands" })}
-          onOpenManage={() => setScreen({ name: "manage" })}
-          onOpenSpending={() => setScreen({ name: "spending" })}
-        />
+        <Box flexDirection="column">
+          <Banner columns={columns} rows={rows} />
+          <Ladder
+            state={state}
+            kits={kits}
+            onOpenKits={() => setScreen({ name: "kits" })}
+            onOpenKit={(kit) => setScreen({ name: "kitDetail", kit })}
+            onOpenExplore={() => setScreen({ name: "explore" })}
+            onOpenCommands={() => setScreen({ name: "commands" })}
+            onOpenManage={() => setScreen({ name: "manage" })}
+            onOpenSpending={() => setScreen({ name: "spending" })}
+          />
+        </Box>
       );
   }
 }

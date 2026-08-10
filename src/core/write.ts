@@ -68,6 +68,21 @@ function fsyncDir(dirPath: string): void {
   }
 }
 
+/**
+ * A cheap "has this file changed?" stamp: inode, size, and modification time.
+ * Not a hash — hashing ~/.claude.json on every write would cost more than it
+ * is worth, and this catches every real case except a rewrite that lands in
+ * the same millisecond at byte-identical length.
+ */
+function fileFingerprint(filePath: string): string | null {
+  try {
+    const s = fs.statSync(filePath);
+    return `${s.ino}:${s.size}:${s.mtimeMs}`;
+  } catch {
+    return null; // missing is itself a state: it must still be missing later.
+  }
+}
+
 function currentMode(filePath: string): number | null {
   try {
     return fs.statSync(filePath).mode & 0o777;
@@ -421,6 +436,11 @@ function applyOperation(op: Operation): { ok: true; change: RecordedChange } | {
         return { ok: false, failure: { reason: "unparseable", failure: read.failure } };
       }
 
+      // ~/.claude.json belongs to Claude Code, which rewrites it while it runs.
+      // Our read-mutate-rename would silently drop anything it wrote in
+      // between, so remember what we read and refuse the write if it moved.
+      const fingerprintAtRead = fileFingerprint(op.filePath);
+
       // 3. Snapshot raw bytes before any mutation.
       const backupPath = snapshot(op.filePath);
 
@@ -439,6 +459,21 @@ function applyOperation(op: Operation): { ok: true; change: RecordedChange } | {
       }
 
       // 6 & 7. Serialize the caller's object (never schema output) and rename.
+      // Last check before the rename: if someone else wrote the file while we
+      // were working, abort rather than overwrite their change. This narrows
+      // the race to the microseconds between here and rename(); it cannot
+      // close it, because §12.5 rules out holding a lock.
+      if (fileFingerprint(op.filePath) !== fingerprintAtRead) {
+        return {
+          ok: false,
+          failure: {
+            reason: "conflict",
+            filePath: op.filePath,
+            message:
+              "Something else changed this file while ccpanel was working on it, so nothing was written. This usually means Claude Code is running. Try again.",
+          },
+        };
+      }
       const serialized = serializeJson(read.value);
       atomicWriteFile(op.filePath, serialized);
 

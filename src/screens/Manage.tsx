@@ -12,9 +12,10 @@ import {
   nextState,
   stateOf,
 } from "../core/skills.js";
-import { setSkillState, setToolEnabled } from "../core/toggles.js";
+import { setServerDenied, setSkillState, setToolEnabled } from "../core/toggles.js";
 import { SCOPE_HEADING, type ToolInfo, listTools } from "../core/tools.js";
 import type { SkillOverrideState } from "../core/validate.js";
+import type { TransactionResult } from "../core/write.js";
 import { maskText } from "../core/mask.js";
 
 interface ManageProps {
@@ -33,6 +34,20 @@ function readOverrides(repo: RepoInfo): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/**
+ * A failed write says what actually went wrong where we know it. A conflict in
+ * particular is worth naming: it means a running Claude Code rewrote the file,
+ * the user's change was not applied, and trying again will usually work.
+ */
+function writeProblem(result: TransactionResult): string {
+  const failure = result.failure;
+  if (failure?.reason === "conflict") return failure.message;
+  if (failure?.reason === "unparseable") {
+    return "That file has a syntax error, so ccpanel left it alone. Fix the file first.";
+  }
+  return "That couldn't be saved, so nothing was changed.";
 }
 
 /**
@@ -63,15 +78,22 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
     setNotice(null);
 
     if (section === "tools" && currentTool) {
-      if (!currentTool.switchable) {
-        setNotice(
-          `"${currentTool.name}" applies to ${SCOPE_HEADING[currentTool.scope].toLowerCase()}, so it can't be switched from here. To remove it, run:  ${currentTool.removeCommand}`,
-        );
-        return;
+      // Two different switches, picked by where the server came from — see
+      // ToolSwitch in core/tools.ts. Both are Claude Code's own.
+      const result =
+        currentTool.switch === "mcpjson"
+          ? setToolEnabled(repo, currentTool.name, !currentTool.enabled)
+          : setServerDenied(repo, currentTool.name, !currentTool.enabled);
+      if (!result.ok) setNotice(writeProblem(result));
+      else {
+        // Servers switched off outside .mcp.json are off for this folder only,
+        // which is Claude Code's rule, not ours — so say it rather than let
+        // the user assume it applied everywhere.
+        if (currentTool.switch === "projectDeny" && currentTool.enabled) {
+          setNotice(`"${currentTool.name}" is off in this folder. It stays on everywhere else.`);
+        }
+        refresh();
       }
-      const result = setToolEnabled(repo, currentTool.name, !currentTool.enabled);
-      if (!result.ok) setNotice("That couldn't be saved, so nothing was changed.");
-      else refresh();
       return;
     }
 
@@ -83,7 +105,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         return;
       }
       const result = setSkillState(repo, currentSkill.name, nextState(currentState));
-      if (!result.ok) setNotice("That couldn't be saved, so nothing was changed.");
+      if (!result.ok) setNotice(writeProblem(result));
       else {
         setChanged(true);
         refresh();
@@ -130,7 +152,9 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
             label: `${t.name}  ·  ${t.enabled ? "On" : "Off"}`,
             sublabel: `${SCOPE_HEADING[t.scope]} — ${maskText(t.summary).slice(0, 58)}`,
           };
-          if (!t.switchable) item.badge = "↳ can't be switched here";
+          // Every server can be switched now, but where the switch applies
+          // still differs, and that is the part a user gets wrong.
+          if (t.switch === "projectDeny") item.badge = "↳ switches off in this folder only";
           return item;
         })
       : skills.map((s) => {

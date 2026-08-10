@@ -69,6 +69,34 @@ export const mcpJsonSchema = z.looseObject({
   mcpServers: z.record(z.string(), mcpServerSchema).optional(),
 });
 
+/**
+ * `~/.claude.json` — Claude Code's own state file, and the only place a
+ * user-scope MCP server can be switched off.
+ *
+ * Read out of the shipped Claude Code binary rather than guessed: the
+ * predicate is `isDisabled(name) => (projectConfig.disabledMcpServers ?? [])
+ * .includes(name)`, and the writer stores it under `projects[<key>]`. It is a
+ * deny-list of server *names*, so it switches off a server no matter which
+ * scope defined it — which is exactly why a user-scope server can be
+ * disabled here but not through settings.json's disabledMcpjsonServers.
+ *
+ * Only the keys we actually touch are declared. `allowedTools` in particular
+ * is left undeclared on purpose: Claude Code accepts both a string and an
+ * array there, and declaring one shape would make us reject a valid file.
+ */
+const claudeJsonProjectSchema = z.looseObject({
+  mcpServers: z.record(z.string(), mcpServerSchema).optional(),
+  disabledMcpServers: z.array(z.string()).optional(),
+  enabledMcpServers: z.array(z.string()).optional(),
+  disabledMcpjsonServers: z.array(z.string()).optional(),
+  enabledMcpjsonServers: z.array(z.string()).optional(),
+});
+
+export const claudeJsonSchema = z.looseObject({
+  mcpServers: z.record(z.string(), mcpServerSchema).optional(),
+  projects: z.record(z.string(), claudeJsonProjectSchema).optional(),
+});
+
 export interface ValidationIssue {
   path: string;
   message: string;
@@ -103,8 +131,14 @@ export function validateMcpJson(value: unknown): ValidationResult {
   return check(mcpJsonSchema, value);
 }
 
+export function validateClaudeJson(value: unknown): ValidationResult {
+  return check(claudeJsonSchema, value);
+}
+
 /** Picks the right schema for a config file based on its name. */
 export function validateByFilename(filePath: string, value: unknown): ValidationResult {
+  // Checked before .mcp.json only for clarity; the two names can't collide.
+  if (filePath.endsWith(".claude.json")) return validateClaudeJson(value);
   if (filePath.endsWith(".mcp.json")) return validateMcpJson(value);
   if (filePath.endsWith("settings.json") || filePath.endsWith("settings.local.json")) {
     return validateSettings(value);

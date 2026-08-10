@@ -8,19 +8,33 @@ import { type RepoInfo, getClaudePaths } from "./paths.js";
 
 export type ToolScope = "project" | "user" | "local";
 
+/**
+ * Which of Claude Code's two switches turns a given server off.
+ *
+ * `mcpjson` — `disabledMcpjsonServers` in settings.json. Only covers servers
+ *   that came from a .mcp.json, but it lives in the project and can be shared
+ *   with the team, so it stays the default for those.
+ * `projectDeny` — `disabledMcpServers` under `projects[<dir>]` in
+ *   ~/.claude.json. A deny-list of server *names* that applies whatever scope
+ *   defined the server, which is what makes a user-scope server switchable at
+ *   all. This is the switch Claude Code's own /mcp menu writes.
+ */
+export type ToolSwitch = "mcpjson" | "projectDeny";
+
 export interface ToolInfo {
   name: string;
   scope: ToolScope;
   /** How it starts, masked before display. */
   summary: string;
-  /**
-   * Only servers from .mcp.json can be switched, via disabledMcpjsonServers.
-   * User- and local-scope servers live in ~/.claude.json, which v1 never
-   * writes — there is no per-server switch for them a normal user can use.
-   */
+  /** Every server can be switched now; kept so callers can still ask. */
   switchable: boolean;
+  /** Which mechanism a toggle should use for this server. */
+  switch: ToolSwitch;
   enabled: boolean;
-  /** Shown when the user presses Space on something we can't switch. */
+  /**
+   * How to delete the server outright, as opposed to switching it off.
+   * Still shown, because "off" and "gone" are different things.
+   */
   removeCommand: string | null;
 }
 
@@ -56,10 +70,51 @@ export function disabledProjectServers(repo: RepoInfo): Set<string> {
   return disabled;
 }
 
+/**
+ * The key Claude Code files this folder under in ~/.claude.json.
+ *
+ * Read out of the shipped binary: the key is the git root of the directory
+ * Claude Code was started in, falling back to that directory itself — the
+ * same rule paths.ts already applies for projectDir. Checked against this
+ * machine's real ~/.claude.json, where 25 of 25 existing keys are git roots
+ * and none is a subdirectory of one.
+ *
+ * An existing key still wins, so a folder Claude Code already recorded under
+ * some other spelling keeps working instead of gaining a second entry.
+ */
+export function projectConfigKey(repo: RepoInfo, claudeJson?: Record<string, unknown> | null): string {
+  const json = claudeJson === undefined ? readJson(getClaudePaths(repo).userClaudeJson) : claudeJson;
+  const projects = json?.["projects"];
+  if (typeof projects === "object" && projects !== null) {
+    for (const key of [repo.projectDir, repo.cwd]) {
+      if (key in (projects as Record<string, unknown>)) return key;
+    }
+  }
+  return repo.projectDir;
+}
+
+/**
+ * Servers denied by name for this folder, via projects[<dir>].disabledMcpServers.
+ * Applies regardless of the scope that defined the server.
+ */
+export function deniedServers(repo: RepoInfo): Set<string> {
+  const denied = new Set<string>();
+  const json = readJson(getClaudePaths(repo).userClaudeJson);
+  const projects = json?.["projects"];
+  if (typeof projects !== "object" || projects === null) return denied;
+  const entry = (projects as Record<string, unknown>)[projectConfigKey(repo, json)];
+  const list = (entry as { disabledMcpServers?: unknown } | undefined)?.disabledMcpServers;
+  if (Array.isArray(list)) for (const n of list) if (typeof n === "string") denied.add(n);
+  return denied;
+}
+
 export function listTools(repo: RepoInfo): ToolInfo[] {
   const paths = getClaudePaths(repo);
   const out: ToolInfo[] = [];
   const disabled = disabledProjectServers(repo);
+  // A name on the deny-list is off no matter which scope defined it, so this
+  // is folded into `enabled` for every server below, not just the local ones.
+  const denied = deniedServers(repo);
 
   // This folder — from .mcp.json, and the only ones we can switch.
   const projectMcp = readJson(paths.projectMcp);
@@ -71,7 +126,8 @@ export function listTools(repo: RepoInfo): ToolInfo[] {
         scope: "project",
         summary: summarise(server),
         switchable: true,
-        enabled: !disabled.has(name),
+        switch: "mcpjson",
+        enabled: !disabled.has(name) && !denied.has(name),
         removeCommand: null,
       });
     }
@@ -87,8 +143,9 @@ export function listTools(repo: RepoInfo): ToolInfo[] {
           name,
           scope: "user",
           summary: summarise(server),
-          switchable: false,
-          enabled: true,
+          switchable: true,
+          switch: "projectDeny",
+          enabled: !denied.has(name),
           removeCommand: `claude mcp remove ${name} -s user`,
         });
       }
@@ -96,22 +153,21 @@ export function listTools(repo: RepoInfo): ToolInfo[] {
 
     const projects = claudeJson["projects"];
     if (typeof projects === "object" && projects !== null) {
-      for (const key of [repo.projectDir, repo.cwd]) {
-        const entry = (projects as Record<string, unknown>)[key];
-        const local = (entry as { mcpServers?: unknown } | undefined)?.mcpServers;
-        if (typeof local !== "object" || local === null) continue;
+      const entry = (projects as Record<string, unknown>)[projectConfigKey(repo, claudeJson)];
+      const local = (entry as { mcpServers?: unknown } | undefined)?.mcpServers;
+      if (typeof local === "object" && local !== null) {
         for (const [name, server] of Object.entries(local as Record<string, unknown>)) {
           if (out.some((t) => t.name === name && t.scope === "local")) continue;
           out.push({
             name,
             scope: "local",
             summary: summarise(server),
-            switchable: false,
-            enabled: true,
+            switchable: true,
+            switch: "projectDeny",
+            enabled: !denied.has(name),
             removeCommand: `claude mcp remove ${name}`,
           });
         }
-        break;
       }
     }
   }

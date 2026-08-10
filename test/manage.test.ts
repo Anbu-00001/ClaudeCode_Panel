@@ -5,11 +5,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolvePaths } from "../src/core/paths.js";
 import { STATE_CYCLE, STATE_LABEL, listSkills, nextState, readFrontmatter, stateOf } from "../src/core/skills.js";
-import { setConnectorsEnabled, setSkillState, setToolEnabled } from "../src/core/toggles.js";
+import {
+  setConnectorsEnabled,
+  setServerDenied,
+  setSkillState,
+  setToolEnabled,
+} from "../src/core/toggles.js";
 import { connectorsDisabled, listTools } from "../src/core/tools.js";
 import { readUndoLogNewestFirst } from "../src/core/undo.js";
 import { maskText } from "../src/core/mask.js";
-import { serializeJson } from "../src/core/write.js";
+import { runTransaction, serializeJson } from "../src/core/write.js";
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -145,21 +150,82 @@ describe("acceptance #9: things we cannot honestly switch", () => {
       serializeJson({ mcpServers: { serena: { command: "serena", args: ["start"] } } }));
   });
 
-  it("marks a user-scope tool read-only and offers the real command instead", () => {
+  /**
+   * These two used to assert a user-scope tool could not be switched at all.
+   * That was a real limit of v1, not a limit of Claude Code: the shipped
+   * binary checks `(projectConfig.disabledMcpServers ?? []).includes(name)`
+   * under `projects[<dir>]` in ~/.claude.json, which is a deny-list by server
+   * name and so reaches every scope. The switch exists now, and what these
+   * tests guard is that it uses that documented key and stays per-folder.
+   */
+  it("offers a real switch for a user-scope tool, plus the command to remove it", () => {
     const tools = listTools(repo());
     const userTool = tools.find((t) => t.name === "serena");
     expect(userTool?.scope).toBe("user");
-    expect(userTool?.switchable).toBe(false);
+    expect(userTool?.switchable).toBe(true);
+    expect(userTool?.switch).toBe("projectDeny");
+    // Off and gone are different things, so we still show how to delete it.
     expect(userTool?.removeCommand).toBe("claude mcp remove serena -s user");
   });
 
-  it("writes nothing at all for a user-scope tool", () => {
-    const before = fs.readFileSync(path.join(fakeHome, ".claude.json"));
-    const settingsExisted = fs.existsSync(localSettings());
-    // The screen never calls a writer for these, so nothing should exist after.
-    expect(listTools(repo()).find((t) => t.name === "serena")?.switchable).toBe(false);
-    expect(fs.readFileSync(path.join(fakeHome, ".claude.json"))).toEqual(before);
-    expect(fs.existsSync(localSettings())).toBe(settingsExisted);
+  it("switches a user-scope tool off and on again, per folder, without disturbing its definition", () => {
+    const claudeJsonPath = path.join(fakeHome, ".claude.json");
+
+    expect(setServerDenied(repo(), "serena", false).ok).toBe(true);
+    const off = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
+    expect(off.projects[repoDir].disabledMcpServers).toEqual(["serena"]);
+    // The server itself is untouched — switched off, not removed.
+    expect(off.mcpServers.serena).toEqual({ command: "serena", args: ["start"] });
+    expect(listTools(repo()).find((t) => t.name === "serena")?.enabled).toBe(false);
+
+    expect(setServerDenied(repo(), "serena", true).ok).toBe(true);
+    const on = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
+    // Emptied rather than left as [], so it reads like a folder never touched.
+    expect(on.projects[repoDir].disabledMcpServers).toBeUndefined();
+    expect(listTools(repo()).find((t) => t.name === "serena")?.enabled).toBe(true);
+  });
+
+  it("switching off in one folder leaves other folders alone", () => {
+    const claudeJsonPath = path.join(fakeHome, ".claude.json");
+    const other = path.join(fakeHome, "somewhere-else");
+    fs.writeFileSync(
+      claudeJsonPath,
+      serializeJson({
+        mcpServers: { serena: { command: "serena", args: ["start"] } },
+        projects: { [other]: { disabledMcpServers: ["something-of-theirs"] } },
+      }),
+    );
+
+    expect(setServerDenied(repo(), "serena", false).ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
+    expect(after.projects[repoDir].disabledMcpServers).toEqual(["serena"]);
+    expect(after.projects[other].disabledMcpServers).toEqual(["something-of-theirs"]);
+  });
+
+  it("refuses to write when something else changed the file first", () => {
+    const claudeJsonPath = path.join(fakeHome, ".claude.json");
+    // Stand in for a running Claude Code rewriting its own state file between
+    // our read and our rename. The mutate callback is the only point we can
+    // reach in between, so the interference is staged there.
+    const result = runTransaction(
+      [
+        {
+          kind: "patchJson",
+          filePath: claudeJsonPath,
+          keyPath: ["projects"],
+          mutate: (draft) => {
+            fs.writeFileSync(claudeJsonPath, serializeJson({ mcpServers: {}, theirs: true }));
+            draft["projects"] = { [repoDir]: { disabledMcpServers: ["serena"] } };
+          },
+        },
+      ],
+      { kind: "toggle", id: "tool:serena", label: "off" },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.failure?.reason).toBe("conflict");
+    // Their write survived; ours was dropped rather than clobbering it.
+    expect(JSON.parse(fs.readFileSync(claudeJsonPath, "utf8")).theirs).toBe(true);
   });
 
   it("switches a project tool off and on again through the documented setting", () => {
