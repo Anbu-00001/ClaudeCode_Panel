@@ -10,6 +10,11 @@ import {
   serializeJson,
   snapshot,
 } from "../src/core/write.js";
+import {
+  validateByFilename,
+  validateClaudeJson,
+  validateSettings,
+} from "../src/core/validate.js";
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -339,5 +344,47 @@ describe("snapshots", () => {
 
   it("returns null when there is nothing to snapshot", () => {
     expect(snapshot(path.join(workDir, "nope.json"))).toBeNull();
+  });
+});
+
+/**
+ * The schemas exist to protect a user's file, so the thing worth testing is
+ * that they accept what Claude Code actually writes. A schema that is wrong in
+ * the strict direction is not a safe failure: validateByFilename runs before
+ * every write, so it turns a legitimate settings file into one ccpanel refuses
+ * to touch at all.
+ */
+describe("schemas match what Claude Code really writes", () => {
+  it("accepts enabledPlugins as a map of plugin to on/off", () => {
+    // The shape Claude Code writes, taken from a real ~/.claude/settings.json.
+    const real = {
+      enabledPlugins: {
+        "pyright-lsp@claude-plugins-official": true,
+        "typescript-lsp@claude-plugins-official": false,
+      },
+    };
+    expect(validateSettings(real)).toEqual({ ok: true, issues: [] });
+  });
+
+  it("accepts a project entry carrying disabledMcpServers in ~/.claude.json", () => {
+    const real = {
+      mcpServers: { serena: { command: "serena" } },
+      projects: {
+        "/home/someone/thing": { disabledMcpServers: ["serena"], mcpContextUris: [] },
+      },
+    };
+    expect(validateClaudeJson(real)).toEqual({ ok: true, issues: [] });
+    expect(validateByFilename("/home/someone/.claude.json", real).ok).toBe(true);
+  });
+
+  it("keeps keys it has never heard of", () => {
+    // Loose at every level: a future Claude Code key must survive a write.
+    const withUnknowns = {
+      enabledPlugins: { "a@b": true },
+      somethingNew: { nested: { deeper: 1 } },
+      projects: { "/x": { brandNewKey: "keep me" } },
+    };
+    expect(validateSettings(withUnknowns).ok).toBe(true);
+    expect(validateClaudeJson(withUnknowns).ok).toBe(true);
   });
 });

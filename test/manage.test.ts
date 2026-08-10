@@ -7,11 +7,12 @@ import { resolvePaths } from "../src/core/paths.js";
 import { STATE_CYCLE, STATE_LABEL, listSkills, nextState, readFrontmatter, stateOf } from "../src/core/skills.js";
 import {
   setConnectorsEnabled,
+  setPluginEnabled,
   setServerDenied,
   setSkillState,
   setToolEnabled,
 } from "../src/core/toggles.js";
-import { connectorsDisabled, listTools } from "../src/core/tools.js";
+import { connectorsDisabled, listTools, projectConfigKey } from "../src/core/tools.js";
 import { readUndoLogNewestFirst } from "../src/core/undo.js";
 import { maskText } from "../src/core/mask.js";
 import { runTransaction, serializeJson } from "../src/core/write.js";
@@ -202,6 +203,30 @@ describe("acceptance #9: things we cannot honestly switch", () => {
     expect(after.projects[other].disabledMcpServers).toEqual(["something-of-theirs"]);
   });
 
+  it("reuses the folder key Claude Code already recorded instead of adding a second one", () => {
+    const claudeJsonPath = path.join(fakeHome, ".claude.json");
+    // resolvePaths gives projectDir; Claude Code may have recorded the same
+    // folder under cwd instead. Writing our own spelling would leave the user
+    // with two entries for one folder and a switch that appears to do nothing.
+    const nested = path.join(repoDir, "packages", "inner");
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(
+      claudeJsonPath,
+      serializeJson({
+        mcpServers: { serena: { command: "serena", args: ["start"] } },
+        projects: { [nested]: { disabledMcpServers: [] } },
+      }),
+    );
+
+    const innerRepo = resolvePaths(nested);
+    expect(projectConfigKey(innerRepo)).toBe(nested);
+
+    expect(setServerDenied(innerRepo, "serena", false).ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8"));
+    expect(Object.keys(after.projects)).toEqual([nested]);
+    expect(after.projects[nested].disabledMcpServers).toEqual(["serena"]);
+  });
+
   it("refuses to write when something else changed the file first", () => {
     const claudeJsonPath = path.join(fakeHome, ".claude.json");
     // Stand in for a running Claude Code rewriting its own state file between
@@ -279,5 +304,47 @@ describe("secrets never reach the screen", () => {
     }));
     const tool = listTools(repo()).find((t) => t.name === "db");
     expect(maskText(tool?.summary ?? "")).not.toContain("sk-ant-secret123456");
+  });
+});
+
+/**
+ * Plugin skills used to be shown as read-only. They aren't: `claude plugin
+ * enable|disable <plugin>` is a real subcommand of the installed Claude Code.
+ * What matters here is the argv we build, so these use an injected runner and
+ * never touch the user's actual plugins.
+ */
+describe("switching a plugin on and off", () => {
+  it("calls the documented subcommand with the plugin id", () => {
+    const calls: Array<[string, string[]]> = [];
+    const runner = (file: string, args: string[]) => {
+      calls.push([file, args]);
+      return { ok: true, output: "" };
+    };
+
+    setPluginEnabled("typescript-lsp@claude-plugins-official", false, runner);
+    setPluginEnabled("typescript-lsp@claude-plugins-official", true, runner);
+
+    expect(calls).toEqual([
+      ["claude", ["plugin", "disable", "typescript-lsp@claude-plugins-official"]],
+      ["claude", ["plugin", "enable", "typescript-lsp@claude-plugins-official"]],
+    ]);
+  });
+
+  it("passes a failure straight through instead of inventing a reason", () => {
+    const runner = () => ({ ok: false, output: "Plugin not found: nope@nowhere" });
+    const result = setPluginEnabled("nope@nowhere", false, runner);
+    expect(result.ok).toBe(false);
+    expect(result.output).toBe("Plugin not found: nope@nowhere");
+  });
+
+  it("never shells out through a string, so a plugin id cannot inject arguments", () => {
+    const calls: Array<[string, string[]]> = [];
+    const runner = (file: string, args: string[]) => {
+      calls.push([file, args]);
+      return { ok: true, output: "" };
+    };
+    setPluginEnabled("evil; rm -rf /", false, runner);
+    // The whole thing stays one argv element — it is never parsed by a shell.
+    expect(calls[0]?.[1]).toEqual(["plugin", "disable", "evil; rm -rf /"]);
   });
 });

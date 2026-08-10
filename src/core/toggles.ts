@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { type RepoInfo, getClaudePaths } from "./paths.js";
 import { projectConfigKey } from "./tools.js";
 import { appendUndoEntry } from "./undo.js";
@@ -141,6 +142,54 @@ export function setServerDenied(
     },
     appendUndoEntry,
   );
+}
+
+/**
+ * Runs one Claude Code CLI subcommand. Never a prompt — these are the same
+ * management subcommands a user could type, so nothing here reaches a model
+ * or costs anything (C1, C2).
+ */
+export type CommandRunner = (file: string, args: string[]) => { ok: boolean; output: string };
+
+const runCommand: CommandRunner = (file, args) => {
+  try {
+    const output = execFileSync(file, args, {
+      encoding: "utf8",
+      timeout: 30_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { ok: true, output: output.trim() };
+  } catch (err) {
+    // A missing `claude` binary and a subcommand that failed are both just
+    // "it didn't work" to the caller, but the message differs and the user
+    // needs to see which — so pass through whatever we actually got.
+    const e = err as { stderr?: string; stdout?: string; message?: string; code?: string };
+    const detail = [e.stderr, e.stdout, e.message].find((s) => typeof s === "string" && s.trim());
+    return {
+      ok: false,
+      output:
+        e.code === "ENOENT"
+          ? "Couldn't find the `claude` command on this computer."
+          : (detail ?? "").trim(),
+    };
+  }
+};
+
+/**
+ * Switches a plugin — and so every skill inside it — on or off.
+ *
+ * Skills that come from a plugin have no entry in skillOverrides; `/plugin`
+ * owns them, and its CLI is `claude plugin enable|disable <plugin>`, verified
+ * against the installed Claude Code. The scope flag is deliberately omitted:
+ * it defaults to auto-detect, and letting Claude Code find the plugin is more
+ * reliable than us guessing which scope installed it.
+ */
+export function setPluginEnabled(
+  pluginId: string,
+  enabled: boolean,
+  run: CommandRunner = runCommand,
+): { ok: boolean; output: string } {
+  return run("claude", ["plugin", enabled ? "enable" : "disable", pluginId]);
 }
 
 /** All claude.ai connectors share one switch — there is no per-connector one. */

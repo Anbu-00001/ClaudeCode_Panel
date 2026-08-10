@@ -43,7 +43,13 @@ export const settingsSchema = z.looseObject({
   hooks: z.record(z.string(), z.array(hookMatcherSchema)).optional(),
   disabledMcpjsonServers: z.array(z.string()).optional(),
   enabledMcpjsonServers: z.array(z.string()).optional(),
-  enabledPlugins: z.array(z.string()).optional(),
+  /**
+   * A map of `plugin@marketplace` to on/off, NOT a list. Checked against a
+   * real ~/.claude/settings.json written by Claude Code itself — the array
+   * this used to declare made validation reject the user's own settings, so
+   * every write to that file aborted as "invalid".
+   */
+  enabledPlugins: z.record(z.string(), z.boolean()).optional(),
   skillOverrides: z.record(z.string(), z.enum(SKILL_OVERRIDE_STATES)).optional(),
   disableAllHooks: z.boolean().optional(),
   disableBundledSkills: z.boolean().optional(),

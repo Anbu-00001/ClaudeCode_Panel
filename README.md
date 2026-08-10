@@ -9,6 +9,8 @@ screen is read from files already on your computer.
 npx ccpanel
 ```
 
+Not on npm yet — until it is, see [Run it in any folder](#run-it-in-any-folder) below.
+
 ---
 
 ## What it does
@@ -72,6 +74,45 @@ complete-old or complete-new, never truncated; installing and uninstalling a kit
 settings byte-identical, including keys ccpanel has never heard of.
 
 Linux only in v1.
+
+## Run it in any folder
+
+Do this once, from this folder:
+
+```bash
+npm run install-global
+```
+
+From then on, type one word wherever you happen to be:
+
+```bash
+ccpanel
+```
+
+Any folder works — a work project, your home folder, an empty directory, somewhere that isn't a git
+repo at all. It reads whatever folder you are standing in when you type it.
+
+To take the command away again:
+
+```bash
+npm run uninstall-global
+```
+
+**Three things worth knowing.**
+
+*It never asks for your password.* The command goes in npm's own folder, which lives inside your
+Node installation and already belongs to you. Nothing here uses `sudo`. If that folder isn't
+somewhere your terminal looks, the installer says so and prints the one line to add to `~/.bashrc`
+or `~/.zshrc`.
+
+*It installs a copy, not a shortcut.* `npm run install-global` builds the app, packs up exactly the
+files that would be published, and installs those. So editing the code here does not change the
+`ccpanel` you type elsewhere — a half-finished edit can't break a command you were relying on. When
+you do want your changes out there, run `npm run install-global` again.
+
+*If you switch Node versions, install it again.* Version managers like nvm give each Node version
+its own set of commands, so `nvm use` a different one and `ccpanel` isn't there. Run
+`npm run install-global` on that version too, or `nvm reinstall-packages <the-old-version>`.
 
 ## Running it from source
 

@@ -16,6 +16,8 @@
     "start": "npm run build && node dist/cli.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "install-global": "node scripts/install-global.mjs",
+    "uninstall-global": "npm rm -g ccpanel",
     "refresh-commands": "node scripts/refresh-commands.mjs"
   },
   "dependencies": {
