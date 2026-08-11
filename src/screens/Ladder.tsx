@@ -46,7 +46,7 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOp
       { key: "kits", label: "See everything you can set up →" },
       { key: "explore", label: "Explore what Claude Code can do →" },
       { key: "commands", label: "Look up something you can type →" },
-      { key: "manage", label: "Manage what you have →" },
+      { key: "manage", label: "Manage Tools and connectors you have →" },
       { key: "spending", label: "Spending →" },
     ],
     [suggestions],

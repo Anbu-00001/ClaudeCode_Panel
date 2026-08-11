@@ -24,6 +24,11 @@ import {
   defaultExec,
   listSkillUpdates,
 } from "../core/updates.js";
+import {
+  type UsageReport,
+  readFolderUsage,
+  readSessionUsage,
+} from "../core/usage.js";
 import type { SkillOverrideState } from "../core/validate.js";
 import type { TransactionResult } from "../core/write.js";
 import { maskText } from "../core/mask.js";
@@ -70,6 +75,44 @@ function readEnabledPlugins(repo: RepoInfo): Record<string, boolean> {
     }
   }
   return merged;
+}
+
+/**
+ * The on/off control. A row whose state is only a word reads as a label, so
+ * anything that can be switched gets the same marker in the same column —
+ * filled for on, hollow for off — and both spellings are the same width so
+ * flipping one doesn't shift the whole list sideways.
+ */
+const SWITCH = (on: boolean) => ({ text: on ? "[◉ ON ]" : "[○ OFF]", color: on ? "green" : "red" });
+
+/** The same idea for an ability, which has four states rather than two. */
+const STATE_CONTROL: Record<SkillOverrideState, { text: string; color: string }> = {
+  on: { text: "[◉ On   ]", color: "green" },
+  "name-only": { text: "[◐ Quiet]", color: "yellow" },
+  "user-invocable-only": { text: "[◔ Ask  ]", color: "yellow" },
+  off: { text: "[○ Off  ]", color: "red" },
+};
+
+/**
+ * How often this server was called here, in words a person can act on.
+ *
+ * Three states, kept apart on purpose: we have no transcripts for this folder
+ * (we cannot know), we have them and this server never appears (a real zero),
+ * or we have a count. Collapsing the first two into "0" would invent a fact.
+ */
+function usageLine(
+  name: string,
+  usage: { folder: UsageReport; session: UsageReport } | null,
+): string {
+  if (!usage) return "";
+  if (usage.folder.transcriptsFound === 0) return " · no record of this folder yet";
+  const here = usage.folder.byServer.get(name)?.calls ?? 0;
+  if (here === 0) return " · never called here";
+  const thisSession = usage.session.byServer.get(name)?.calls ?? 0;
+  const times = `${here} time${here === 1 ? "" : "s"}`;
+  return thisSession > 0
+    ? ` · called ${times} here, ${thisSession} this session`
+    : ` · called ${times} here`;
 }
 
 /**
@@ -126,6 +169,37 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
       cancelled = true;
     };
   }, [skills]);
+
+  /**
+   * How often each server was actually called, read from this folder's own
+   * transcripts. Deliberately keyed on `repo` alone rather than `version`:
+   * flipping a switch doesn't change history, and re-reading megabytes of
+   * transcript on every keypress would.
+   */
+  const [usage, setUsage] = useState<{ folder: UsageReport; session: UsageReport } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([readFolderUsage(repo), readSessionUsage(repo)])
+      .then(([folder, session]) => {
+        if (!cancelled) setUsage({ folder, session });
+      })
+      .catch(() => {
+        // Counting is a nicety. If it fails the screen still works, and
+        // showing nothing is honest — a zero here would be a lie.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  /** The handful worth naming; the long tail is noise on a narrow screen. */
+  const topTools = useMemo(
+    () =>
+      [...(usage?.folder.byTool ?? new Map())]
+        .sort((a, b) => b[1].calls - a[1].calls)
+        .slice(0, 6),
+    [usage],
+  );
 
   /** The update we've offered but not yet run — C5's preview before anything. */
   const [pending, setPending] = useState<SkillUpdateCheck | null>(null);
@@ -256,7 +330,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
     return (
       <Box flexDirection="column">
         <Box borderStyle="single" paddingX={1}>
-          <Text bold>What you have</Text>
+          <Text bold>Manage Tools and connectors you have</Text>
         </Box>
         <Box flexDirection="column" paddingX={1} paddingY={1}>
           <Text>You haven't added any tools or abilities yet.</Text>
@@ -314,12 +388,13 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
       ? tools.map((t) => {
           const item: ListItem = {
             key: `${t.scope}:${t.name}`,
-            label: `${t.name}  ·  ${t.enabled ? "On" : "Off"}`,
-            sublabel: `${SCOPE_HEADING[t.scope]} — ${maskText(t.summary).slice(0, 58)}`,
+            label: t.name,
+            control: SWITCH(t.enabled),
+            sublabel: `${SCOPE_HEADING[t.scope]}${usageLine(t.name, usage)} — ${maskText(t.summary).slice(0, 44)}`,
           };
           // Every server can be switched now, but where the switch applies
           // still differs, and that is the part a user gets wrong.
-          if (t.switch === "projectDeny") item.badge = "↳ switches off in this folder only";
+          if (t.switch === "projectDeny") item.badge = "this folder only";
           return item;
         })
       : skills.map((s) => {
@@ -329,23 +404,42 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
 
           // A plugin skill has one of two states, not the four an override
           // gives, because the plugin switch is the only one that reaches it.
+          // A button appears whenever there is a command we can honestly run,
+          // not only when something is out of date — a row that can be acted
+          // on should look like it, and "up to date" is still worth re-running
+          // deliberately. Where there is no honest command there is no button,
+          // and the badge says so instead of implying a dead control.
+          const check = updates.get(s.filePath);
+          const updateAction = check?.command
+            ? { text: "[ Update ]", color: behind ? "yellow" : "cyan" }
+            : undefined;
+          // Only worth flagging when the answer would otherwise be a shrug.
+          // Saying "no update path" next to "Up to date (0.9.32)" reads as a
+          // contradiction, when in fact we know the version and simply have no
+          // command to run.
+          const noUpdater = check && !check.command && check.status !== "up-to-date";
+
           if (s.pluginId) {
             const on = !pluginOff.has(s.pluginId);
             return {
               key: `${s.pluginId}:${s.name}`,
-              label: `${s.name}  ·  ${on ? "On" : "Off"}`,
+              label: s.name,
+              control: SWITCH(on),
+              ...(updateAction ? { action: updateAction } : {}),
               sublabel: `uses ${s.weight} of Claude's memory — from the ${s.pluginId} bundle`,
-              badge: behind ? "↳ update available · press u" : "↳ switches the whole bundle",
+              badge: noUpdater ? "no update path" : "whole bundle",
             } satisfies ListItem;
           }
           const state = stateOf(overrides, s.name);
           const item: ListItem = {
             key: `${s.source}:${s.name}`,
-            label: `${s.name}  ·  ${STATE_LABEL[state]}`,
+            label: s.name,
+            control: STATE_CONTROL[state],
             sublabel: `uses ${s.weight} of Claude's memory — ${STATE_SUBLABEL[state]}`,
           };
-          if (behind) item.badge = "↳ update available · press u";
-          else if (!s.switchable) item.badge = "↳ not switchable here";
+          if (updateAction) item.action = updateAction;
+          if (!s.switchable) item.badge = "not switchable here";
+          else if (noUpdater) item.badge = "no update path";
           return item;
         });
 
@@ -383,7 +477,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
   return (
     <Box flexDirection="column">
       <Box borderStyle="single" paddingX={1}>
-        <Text bold>What you have</Text>
+        <Text bold>Manage Tools and connectors you have</Text>
         <Text dimColor>
           {"    "}
           <Text color={section === "tools" ? "cyan" : undefined}>Tools ({tools.length})</Text>
@@ -398,7 +492,14 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         {items.length === 0 ? (
           <Text>Nothing here yet. Press ← or → to see the other list.</Text>
         ) : (
-          <List items={items} selectedIndex={index} onSelectedIndexChange={setIndex} />
+          // Enter does the same as Space. A row that looks like a switch
+          // should flip on the key people press first, whichever that is.
+          <List
+            items={items}
+            selectedIndex={index}
+            onSelectedIndexChange={setIndex}
+            onSubmit={toggle}
+          />
         )}
 
         {notice ? (
@@ -410,6 +511,30 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         {ran ? (
           <Box marginTop={1}>
             <Text color="green">{ran}</Text>
+          </Box>
+        ) : null}
+
+        {/* The counting widget. Everything here is arithmetic over transcripts
+            already on this computer — no API, no cost (C1). */}
+        {section === "tools" && usage ? (
+          <Box marginTop={1} flexDirection="column">
+            {usage.folder.transcriptsFound === 0 ? (
+              <Text dimColor>Nothing has run in this folder yet, so there's nothing to count.</Text>
+            ) : (
+              <>
+                <Text dimColor>
+                  {`Used here: ${usage.folder.totalCalls} tool calls over ${usage.folder.sessions} session${
+                    usage.folder.sessions === 1 ? "" : "s"
+                  }  ·  ${usage.session.totalCalls} in the latest one`}
+                </Text>
+                {topTools.length > 0 ? (
+                  <Text dimColor>
+                    {"Most used:  "}
+                    {topTools.map(([name, u]) => `${name} ${u.calls}`).join("  ·  ")}
+                  </Text>
+                ) : null}
+              </>
+            )}
           </Box>
         ) : null}
 

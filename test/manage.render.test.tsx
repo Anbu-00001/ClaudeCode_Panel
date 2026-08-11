@@ -55,6 +55,108 @@ describe("the manage screen, rendered", () => {
     unmount();
   });
 
+  /**
+   * The switch used to be the word "On" in the label, which read as a status
+   * rather than something you could press. These assert the control itself is
+   * on screen and that pressing Space visibly moves it.
+   */
+  it("draws a switch you can see, and flips it on screen when pressed", async () => {
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { serena: { command: "serena" } } }),
+    );
+    const { lastFrame, stdin, unmount } = render(
+      <Manage repo={resolvePaths(repoDir)} onOpenKits={() => {}} onBack={() => {}} />,
+    );
+    await settle();
+    expect(lastFrame()).toContain("[◉ ON ]");
+
+    stdin.write(" ");
+    await settle();
+    expect(lastFrame()).toContain("[○ OFF]");
+    // and it really wrote it, rather than only moving the pixels
+    const written = JSON.parse(fs.readFileSync(path.join(fakeHome, ".claude.json"), "utf8"));
+    expect(written.projects[repoDir].disabledMcpServers).toEqual(["serena"]);
+    unmount();
+  });
+
+  /** Writes a transcript where `calls` tool_use blocks name `tool`. */
+  function writeTranscript(sessionId: string, entries: Array<[string, number]>) {
+    const dir = path.join(
+      fakeHome,
+      ".claude",
+      "projects",
+      repoDir.replace(/[^a-zA-Z0-9]/g, "-"),
+    );
+    fs.mkdirSync(dir, { recursive: true });
+    const lines: string[] = [];
+    for (const [tool, calls] of entries) {
+      for (let i = 0; i < calls; i++) {
+        lines.push(
+          JSON.stringify({
+            sessionId,
+            timestamp: new Date().toISOString(),
+            cwd: repoDir,
+            message: { content: [{ type: "tool_use", id: `t${i}`, name: tool, input: {} }] },
+          }),
+        );
+      }
+    }
+    fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), `${lines.join("\n")}\n`);
+  }
+
+  it("counts how often each server was really called in this folder", async () => {
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { serena: { command: "serena" } } }),
+    );
+    writeTranscript("s1", [
+      ["mcp__serena__find_symbol", 3],
+      ["Bash", 5],
+    ]);
+
+    const { lastFrame, unmount } = render(
+      <Manage repo={resolvePaths(repoDir)} onOpenKits={() => {}} onBack={() => {}} />,
+    );
+    await settle();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("called 3 times here");
+    expect(frame).toContain("Bash 5");
+    expect(frame).toContain("8 tool calls");
+    unmount();
+  });
+
+  it("says it has no record rather than showing a zero it made up", async () => {
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { serena: { command: "serena" } } }),
+    );
+    // No transcripts at all for this folder.
+    const { lastFrame, unmount } = render(
+      <Manage repo={resolvePaths(repoDir)} onOpenKits={() => {}} onBack={() => {}} />,
+    );
+    await settle();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("nothing to count");
+    expect(frame).not.toContain("never called here");
+    unmount();
+  });
+
+  it("distinguishes a genuine zero from having no data", async () => {
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { serena: { command: "serena" } } }),
+    );
+    // Transcripts exist, but serena is not in them — that zero is real.
+    writeTranscript("s1", [["Bash", 2]]);
+    const { lastFrame, unmount } = render(
+      <Manage repo={resolvePaths(repoDir)} onOpenKits={() => {}} onBack={() => {}} />,
+    );
+    await settle();
+    expect(lastFrame()).toContain("never called here");
+    unmount();
+  });
+
   it("offers an update key for an ability and never guesses its freshness", async () => {
     makeSkill("deploy", "name: deploy\ndescription: Ship it.");
     const { lastFrame, stdin, unmount } = render(
