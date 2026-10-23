@@ -104,8 +104,9 @@ From then on, type one word wherever you happen to be:
 ccpanel
 ```
 
-Any folder works — a work project, your home folder, an empty directory, somewhere that isn't a git
-repo at all. It reads whatever folder you are standing in when you type it. It needs a terminal
+It reads whatever folder you are standing in when you type it, so open it inside the project you
+want to change. Looking around works anywhere, but kits that set things up for one project won't
+install from your home folder: there, "this project" would be every project. It needs a terminal
 window of at least 80 columns by 24 rows, and won't start with its input or output piped.
 `ccpanel --help` and `ccpanel --version` work anywhere.
 

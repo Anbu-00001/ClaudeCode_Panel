@@ -169,3 +169,22 @@ describe("removing a kit asks first, listing what goes", () => {
     unmount();
   });
 });
+
+describe("the kit screen, opened in the home folder", () => {
+  it("says why a project kit can't be set up there, and doesn't offer to", async () => {
+    const kit = getKit("scope-guard", kitsDir);
+    if (!kit) throw new Error("no kit");
+    const { lastFrame, stdin, unmount } = render(
+      <KitDetail kit={kit} repo={resolvePaths(fakeHome)} onBack={() => {}} />,
+    );
+    await settle();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Open ccpanel inside a project folder");
+    expect(frame).not.toContain("Set it up");
+    stdin.write("\r");
+    await settle();
+    expect(fs.existsSync(path.join(fakeHome, ".claude", "settings.json"))).toBe(false);
+    expect(fs.existsSync(path.join(fakeHome, "CLAUDE.md"))).toBe(false);
+    unmount();
+  });
+});

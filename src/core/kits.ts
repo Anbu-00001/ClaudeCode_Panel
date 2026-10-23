@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { RungId } from "./detect.js";
-import { type ClaudePaths, getClaudePaths, type RepoInfo } from "./paths.js";
+import { type ClaudePaths, getClaudePaths, projectIsHome, type RepoInfo } from "./paths.js";
 import {
   atomicWriteFile,
   ccpanelHome,
@@ -1070,6 +1070,24 @@ function planPermissionRemoval(kit: Kit, repo: RepoInfo, ledger: PermissionLedge
   return { remove, handOver };
 }
 
+/** True when installing the kit writes anything inside the project folder. */
+function writesToProject(kit: Kit): boolean {
+  return kit.installs.some(
+    (e) => !((e.kind === "settings" || e.kind === "mcp") && e.scope === "user"),
+  );
+}
+
+export const HOME_FOLDER_MESSAGE =
+  "ccpanel is open in your home folder, not a project folder, so this would change every project rather than one. Open ccpanel inside a project folder to set it up.";
+
+/**
+ * Why this kit can't be set up here, or null when it can. A kit that writes
+ * into the project refuses to when the "project" is the home folder.
+ */
+export function installBlockedReason(kit: Kit, repo: RepoInfo): string | null {
+  return writesToProject(kit) && projectIsHome(repo) ? HOME_FOLDER_MESSAGE : null;
+}
+
 export function installKit(
   kit: Kit,
   repo: RepoInfo,
@@ -1078,6 +1096,14 @@ export function installKit(
     changes: RecordedChange[],
   ) => void,
 ): TransactionResult {
+  const blocked = installBlockedReason(kit, repo);
+  if (blocked) {
+    return {
+      ok: false,
+      changes: [],
+      failure: { reason: "conflict", filePath: repo.projectDir, message: blocked },
+    };
+  }
   const permissions: PermissionPlan = { added: new Map(), remove: new Map() };
   const mcp: McpPlan = { ledger: readMcpLedger(), written: [] };
   const result = runTransaction(

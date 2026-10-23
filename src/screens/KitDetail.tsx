@@ -5,6 +5,7 @@ import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { Preview } from "../components/Preview.js";
 import {
+  installBlockedReason,
   installedMessage,
   installKit,
   isKitInstalled,
@@ -62,6 +63,8 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const pageSize = Math.max(5, (stdout?.rows ?? 24) - 9);
   const maxTop = Math.max(0, fileLines.length - pageSize);
   // A newer version of the kit than the copy ccpanel put here earlier.
+  // Opened in the home folder, a project kit would change every project.
+  const blockedReason = useMemo(() => installBlockedReason(kit, repo), [kit, repo]);
   const hasUpdate = useMemo(
     () => alreadyInstalled && kitHasUpdate(kit, repo),
     [alreadyInstalled, kit, repo],
@@ -112,12 +115,14 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const actions: ListItem[] = alreadyInstalled
     ? [
         { key: "keep", label: "Keep it" },
-        ...(hasUpdate ? [{ key: "install", label: "Update it to the latest version" }] : []),
+        ...(hasUpdate && !blockedReason
+          ? [{ key: "install", label: "Update it to the latest version" }]
+          : []),
         { key: "files", label: "Show me the files" },
         { key: "uninstall", label: "Remove it" },
       ]
     : [
-        { key: "install", label: "Set it up" },
+        ...(blockedReason ? [] : [{ key: "install", label: "Set it up" }]),
         { key: "files", label: "Show me the files" },
       ];
 
@@ -357,6 +362,12 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
         {kit.honestLimit ? (
           <Box marginTop={1}>
             <Text color="yellow">{kit.honestLimit}</Text>
+          </Box>
+        ) : null}
+
+        {blockedReason ? (
+          <Box marginTop={1}>
+            <Text color="red">{blockedReason}</Text>
           </Box>
         ) : null}
 

@@ -95,6 +95,17 @@ export function resolvePaths(cwd: string = process.cwd()): RepoInfo {
   };
 }
 
+/**
+ * True when "this project" is the user's home folder: ccpanel was opened in
+ * ~ (or a folder that isn't a project) outside any git repository. Then the
+ * project's .claude/settings.json *is* ~/.claude/settings.json, and the
+ * project's CLAUDE.md lands in ~, so a "just this project" change would
+ * really change every project.
+ */
+export function projectIsHome(repo: RepoInfo): boolean {
+  return realOrResolved(repo.projectDir) === realOrResolved(homedir());
+}
+
 /** Every file/directory location ccpanel reads or (in later milestones) writes. */
 export interface ClaudePaths {
   userSettings: string;

@@ -224,6 +224,23 @@ describe("install and uninstall", () => {
   });
 });
 
+describe("opened in the home folder", () => {
+  it("refuses a project kit, since the project's settings would be the user's own", () => {
+    const home = resolvePaths(fakeHome);
+    const kit = getKit("deletion-warning", path.join(projectRoot, "kits"))!;
+    const result = installKit(kit, home, appendUndoEntry);
+    expect(result.ok).toBe(false);
+    expect(result.failure).toMatchObject({ reason: "conflict" });
+    expect(JSON.stringify(result.failure)).toContain("project folder");
+    expect(fs.existsSync(path.join(fakeHome, ".claude"))).toBe(false);
+  });
+
+  it("still installs a project kit from a real project", () => {
+    const kit = getKit("deletion-warning", path.join(projectRoot, "kits"))!;
+    expect(installKit(kit, repo(), appendUndoEntry).ok).toBe(true);
+  });
+});
+
 describe("post-install self-check (§9.5)", () => {
   function kit() {
     return getKit("deletion-warning", path.join(projectRoot, "kits"))!;
