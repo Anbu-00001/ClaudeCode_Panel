@@ -110,6 +110,12 @@ describe("safe-permissions", () => {
       "curl",
       "mv ",
       "git reset",
+      // Can delete branches: `git branch -D main`.
+      "git branch",
+      // Print any file, including ~/.ssh keys and .env files, without asking.
+      "cat ",
+      "head ",
+      "tail ",
     ]) {
       expect(
         allow.some((r) => r.includes(dangerous)),
