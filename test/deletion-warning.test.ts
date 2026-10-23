@@ -388,3 +388,36 @@ describe("acceptance #17: speed", () => {
     expect(Math.min(...runs)).toBeLessThan(200);
   }, 120_000);
 });
+
+describe("files git ignores are never called saved", () => {
+  beforeEach(() => {
+    fs.mkdirSync(path.join(repo, "config"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "config", "app.json"), "{}\n");
+    fs.appendFileSync(path.join(repo, ".gitignore"), "secrets.env\n");
+    execSync("git add -A && git commit -qm config", { cwd: repo });
+  });
+
+  it("warns that an ignored secrets file inside a clean folder has no copy", () => {
+    fs.writeFileSync(path.join(repo, "config", "secrets.env"), "TOKEN=x\n");
+
+    const out = bash("rm -rf config");
+
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("Git ignores 1 item in it (like secrets.env)");
+    expect(reasonOf(out)).not.toContain("you could get it back");
+  });
+
+  it("still reassures when the folder holds only tracked, committed files", () => {
+    const out = bash("rm -rf config");
+    expect(reasonOf(out)).toContain("All of it is saved in git, so you could get it back.");
+  });
+
+  it("says build output is the exception rather than calling it saved", () => {
+    fs.mkdirSync(path.join(repo, "config", "node_modules", "x"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "config", "node_modules", "x", "i.js"), "1\n");
+
+    const out = bash("rm -rf config");
+
+    expect(reasonOf(out)).toContain("Apart from build output that can be rebuilt");
+  });
+});

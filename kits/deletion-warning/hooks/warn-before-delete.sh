@@ -181,38 +181,69 @@ is_git_ignored() {
 # Prints, for one existing path, how many of its files have changes git
 # hasn't saved (a number), "nogit" when it isn't inside a git work tree at
 # all, or "unknown" when git couldn't answer.
+#
+# After that first line come the things git ignores inside the path, one per
+# line. Git never saves an ignored file (a .env, local config, keys), so
+# "saved in git" must never be said about them. Build output (node_modules,
+# dist, ...) is prefixed "build:" because it can be rebuilt. Plain
+# `git status --untracked-files=all` leaves ignored files out entirely, which
+# is how a folder holding secrets.env used to be called "all saved".
+# "--ignored=matching" names an ignored folder once instead of every file in
+# it, so a node_modules inside costs one line.
 unsaved_in() {
-  local p="$1" dir out rc
-  command -v git >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  local p="$1" dir out rc line name n=0 ign=""
+  command -v git >/dev/null 2>&1 || { printf 'unknown\n'; return 0; }
   case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
   if [ -d "$p" ]; then dir="$p"; else dir=$(dirname -- "$p"); fi
 
   out=$(safe_git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)
   rc=$?
-  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then printf 'unknown'; return 0; fi
-  [ "$out" = "true" ] || { printf 'nogit'; return 0; }
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then printf 'unknown\n'; return 0; fi
+  [ "$out" = "true" ] || { printf 'nogit\n'; return 0; }
 
-  out=$(safe_git -C "$dir" status --porcelain --untracked-files=all -- "$p" 2>/dev/null)
+  out=$(safe_git -C "$dir" status --porcelain --ignored=matching --untracked-files=all -- "$p" 2>/dev/null)
   rc=$?
-  [ "$rc" -eq 0 ] || { printf 'unknown'; return 0; }
-  printf '%s' "$out" | grep -c . 2>/dev/null
+  [ "$rc" -eq 0 ] || { printf 'unknown\n'; return 0; }
+  while IFS= read -r line; do
+    case "$line" in
+      '') ;;
+      '!! '*)
+        name=${line#!! }
+        name=${name%/}
+        if is_ignorable_path "$name"; then ign="${ign}build:$name
+"; else ign="$ign$name
+"; fi
+        ;;
+      *) n=$((n + 1)) ;;
+    esac
+  done <<EOF_STATUS
+$out
+EOF_STATUS
+  printf '%s\n%s' "$n" "$ign"
   return 0
 }
 
 # Same answer for a list of paths: a number when every one is in git and git
 # answered, otherwise the worst of "nogit" / "unknown". Any unsaved count
-# wins, because that is the most specific thing we can say.
+# wins, because that is the most specific thing we can say. The ignored lines
+# from every path follow, as for unsaved_in.
 count_unsaved() {
-  local p r total=0 state=""
+  local p r first total=0 state="" ign=""
   for p in "$@"; do
     r=$(unsaved_in "$p")
-    case "$r" in
+    first=${r%%
+*}
+    [ "$first" = "$r" ] || ign="$ign${r#*
+}
+"
+    case "$first" in
       nogit) state="nogit" ;;
       unknown) [ "$state" = "nogit" ] || state="unknown" ;;
-      *) [ "$r" -gt 0 ] 2>/dev/null && total=$((total + r)) ;;
+      *) [ "$first" -gt 0 ] 2>/dev/null && total=$((total + first)) ;;
     esac
   done
-  if [ "$total" -gt 0 ] || [ -z "$state" ]; then printf '%s' "$total"; else printf '%s' "$state"; fi
+  if [ "$total" -gt 0 ] || [ -z "$state" ]; then printf '%s\n' "$total"; else printf '%s\n' "$state"; fi
+  printf '%s' "$ign"
   return 0
 }
 
@@ -475,7 +506,7 @@ fi
 
 # --- Git: discards work that was never committed ----------------------------
 if printf '%s' "$CMD" | grep -qE 'git +reset +--hard|git +clean +-[a-z]*f|git +checkout +-- +\.'; then
-  UNSAVED=$(count_unsaved .)
+  UNSAVED=$(count_unsaved . | head -n 1)
   if [ "$UNSAVED" = "unknown" ]; then
     respond_ask \
       "This throws away any changes you haven't committed." \
@@ -600,8 +631,21 @@ EOF_GLOB
   done
   [ "$TOTAL" -eq 0 ] && exit 0
 
-  UNSAVED=$(count_unsaved "${EXISTING[@]}")
+  UNSAVED_OUT=$(count_unsaved "${EXISTING[@]}")
+  UNSAVED=${UNSAVED_OUT%%
+*}
   FILES="$TOTAL $(plural "$TOTAL" "file" "files")"
+
+  # Files git ignores (a .env, local config, keys) are never in git, however
+  # clean the rest of the folder is. Build output is ignored too, but can be
+  # rebuilt, so it only softens the reassurance below.
+  IGNORED_LIST=""
+  [ "$UNSAVED" = "$UNSAVED_OUT" ] || IGNORED_LIST=${UNSAVED_OUT#*
+}
+  IGNORED=$(printf '%s\n' "$IGNORED_LIST" | grep -v '^build:' | grep -c .) || true
+  BUILD_IGNORED=$(printf '%s\n' "$IGNORED_LIST" | grep -c '^build:') || true
+  IGNORED_EXAMPLE=$(printf '%s\n' "$IGNORED_LIST" | grep -v '^build:' | grep . | head -n 1)
+  IGNORED_EXAMPLE=${IGNORED_EXAMPLE##*/}
 
   # Reaching here means the delete is recursive, uses a bare glob, or names
   # more than five paths — all of which §9.5 asks us to surface. The only
@@ -621,24 +665,41 @@ EOF_GLOB
       ;;
   esac
 
+  IGNORED_SAY=""
+  if [ "$IGNORED" -gt 0 ] 2>/dev/null; then
+    IGNORED_SAY="Git ignores $IGNORED $(plural "$IGNORED" "item" "items") in it (like $IGNORED_EXAMPLE), so it has no copy of $(plural "$IGNORED" "that" "those")."
+  fi
+
   if [ "$UNSAVED" -gt 0 ] 2>/dev/null; then
     respond_ask \
       "This deletes $FILES and can't be undone." \
-      "$UNSAVED of them $(plural "$UNSAVED" "has" "have") changes that aren't saved in git." \
+      "$UNSAVED of them $(plural "$UNSAVED" "has" "have") changes that aren't saved in git.${IGNORED_SAY:+ $IGNORED_SAY}" \
       "loud"
   fi
 
-  # Only now, with git having answered and found nothing unsaved, is it true
-  # to say the files can be got back.
+  if [ -n "$IGNORED_SAY" ]; then
+    respond_ask \
+      "This deletes $FILES and can't be undone." \
+      "$IGNORED_SAY" \
+      "loud"
+  fi
+
+  # Only now, with git having answered and found nothing unsaved or ignored,
+  # is it true to say the files can be got back.
+  SAVED="All of it is saved in git, so you could get it back."
+  if [ "$BUILD_IGNORED" -gt 0 ] 2>/dev/null; then
+    SAVED="Apart from build output that can be rebuilt, all of it is saved in git, so you could get it back."
+  fi
+
   if [ "$COUNT" -gt 5 ]; then
     respond_ask \
       "This deletes $FILES across $COUNT places at once." \
-      "All of it is saved in git, so you could get it back."
+      "$SAVED"
   fi
 
   respond_ask \
     "This deletes $FILES." \
-    "All of it is saved in git, so you could get it back."
+    "$SAVED"
 fi
 
 # --- Deleting credentials by any other means --------------------------------
