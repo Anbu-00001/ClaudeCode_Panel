@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Banner } from "./components/Banner.js";
 import { detectLadderState, type LadderState } from "./core/detect.js";
 import { type Kit, loadKits } from "./core/kits.js";
+import { sizeProblem } from "./core/launch.js";
 import { Commands } from "./screens/Commands.js";
 import { Explore } from "./screens/Explore.js";
 import { KitDetail } from "./screens/KitDetail.js";
@@ -46,9 +47,8 @@ export function App() {
   const [state, setState] = useState<LadderState>(() => detectLadderState());
   const [kits] = useState<Kit[]>(() => loadKits());
 
-  if (columns < 80 || rows < 24) {
-    return <Text>ccpanel needs a window at least 80 columns wide.</Text>;
-  }
+  const tooSmall = sizeProblem(columns, rows);
+  if (tooSmall) return <Text>{tooSmall}</Text>;
 
   /** Installing changes what's on disk, so the ladder is re-read on the way back. */
   function backToKits() {

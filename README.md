@@ -105,7 +105,9 @@ ccpanel
 ```
 
 Any folder works — a work project, your home folder, an empty directory, somewhere that isn't a git
-repo at all. It reads whatever folder you are standing in when you type it.
+repo at all. It reads whatever folder you are standing in when you type it. It needs a terminal
+window of at least 80 columns by 24 rows, and won't start with its input or output piped.
+`ccpanel --help` and `ccpanel --version` work anywhere.
 
 To take the command away again:
 
