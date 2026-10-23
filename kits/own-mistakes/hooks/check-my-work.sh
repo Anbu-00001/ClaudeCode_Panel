@@ -95,7 +95,23 @@ case "$FILE" in
   *.ts|*.tsx)
     if [ -f "$CWD/tsconfig.json" ] && [ -x "$CWD/node_modules/.bin/tsc" ]; then
       CHECK_NAME="the project's type checker"
-      CHECK_OUTPUT=$(cd "$CWD" && run_check ./node_modules/.bin/tsc --noEmit -p tsconfig.json | grep -F "$(basename "$FILE")" | head -12)
+      # tsc can't check one file in a project's context, so it checks the
+      # whole project. --incremental keeps what it learned between edits, in
+      # a private folder outside the project (never a new file in the repo),
+      # so only the first check after starting pays the full cost.
+      CACHE_DIR="${TMPDIR:-/tmp}/ccpanel-tsc-$(id -u 2>/dev/null || echo user)"
+      mkdir -p -m 700 "$CACHE_DIR" 2>/dev/null
+      BUILD_INFO="$CACHE_DIR/$(printf '%s' "$CWD" | cksum | cut -d' ' -f1).tsbuildinfo"
+      # Errors are matched on the file's path from the project folder, the
+      # way tsc prints it: two files can share a name (src/a/index.ts and
+      # src/b/index.ts) and only the one just edited is Claude's to fix.
+      case "$FILE" in
+        "$CWD"/*) REL="${FILE#"$CWD"/}" ;;
+        *) REL="$FILE" ;;
+      esac
+      CHECK_OUTPUT=$(cd "$CWD" && run_check ./node_modules/.bin/tsc --noEmit --pretty false \
+          --incremental --tsBuildInfoFile "$BUILD_INFO" -p tsconfig.json \
+        | awk -v rel="$REL(" -v abs="$FILE(" 'index($0, rel) == 1 || index($0, abs) == 1' | head -12)
     fi
     ;;
   *.py)

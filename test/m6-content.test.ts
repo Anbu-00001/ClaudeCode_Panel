@@ -214,6 +214,45 @@ describe("the kit Claude asked for", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it("reports type errors for the edited file only, matched by its full path", () => {
+    const hookPath = path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-omts-"));
+    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-omtmp-"));
+    fs.symlinkSync(path.join(projectRoot, "node_modules"), path.join(tmp, "node_modules"));
+    fs.writeFileSync(
+      path.join(tmp, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { strict: true, skipLibCheck: true, types: [] },
+        include: ["src"],
+      }),
+    );
+    // Same file name in two folders; only one has a mistake in it.
+    fs.mkdirSync(path.join(tmp, "src", "a"), { recursive: true });
+    fs.mkdirSync(path.join(tmp, "src", "b"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "src", "a", "index.ts"), "export const n: number = 'oops';\n");
+    fs.writeFileSync(path.join(tmp, "src", "b", "index.ts"), "export const m = 1;\n");
+
+    const run = (f: string) =>
+      execFileSync("bash", [hookPath], {
+        input: JSON.stringify({
+          tool_name: "Edit",
+          cwd: tmp,
+          tool_input: { file_path: path.join(tmp, f) },
+        }),
+        encoding: "utf8",
+        env: { ...process.env, TMPDIR: cache },
+        timeout: 30_000,
+      });
+
+    expect(run("src/a/index.ts")).toContain("src/a/index.ts(1,14)");
+    expect(run("src/b/index.ts").trim()).toBe("");
+    // What tsc keeps between edits goes in the temp folder, never the project.
+    expect(fs.readdirSync(tmp).sort()).toEqual(["node_modules", "src", "tsconfig.json"]);
+    expect(fs.readdirSync(cache).join(" ")).toMatch(/ccpanel-tsc-/);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(cache, { recursive: true, force: true });
+  }, 60_000);
+
   it("never installs anything or guesses at a checker", () => {
     const hook = fs.readFileSync(
       path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh"),
