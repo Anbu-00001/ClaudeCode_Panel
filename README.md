@@ -37,8 +37,8 @@ using:
 
 **Kits** — a kit is a small bundle that sets up one useful thing end to end: files, settings, and
 something to try, installed together by pressing Enter. You see every file that will be created and
-every setting that will change *before* anything happens, and removing it again is one choice on
-the same screen.
+every setting that will change *before* anything happens, and removing it again is a choice on the
+same screen, which lists what will go and asks once more.
 
 ## The kits
 
@@ -66,13 +66,13 @@ These are guarantees, not aspirations. Each one has tests.
   only these: the Spending screen runs a pinned version of `ccusage` through `npx` (downloaded the
   first time) and `ccusage` fetches the public model price list; a kit that adds a tool, such as
   browser testing, has Claude Code fetch a pinned version of that tool with `npx` when it first
-  starts it; and an
-  update you confirm on the Manage screen runs exactly the command it showed you (for example
-  `git pull`).
+  starts it; and an update you confirm on the Manage screen runs exactly the command it showed you
+  (for example `git pull`).
 - **It never corrupts a config file.** Claude Code rejects an invalid settings file *entirely* — one
   stray comma kills every permission rule and hook you had. So every write reads, parses, snapshots,
   validates, writes to a temp file, renames atomically, then re-reads to confirm. A file that
-  doesn't parse is never overwritten.
+  doesn't parse is never overwritten, a change that would leave a value Claude Code rejects is
+  refused, and a file reached through a symlink is written where the link points.
 - **What it sets up, it can take back out.** Every kit uninstalls exactly what it added: a
   permission you already had, or one another installed kit still uses, stays put, and a kit file
   you have edited since is kept and named rather than deleted. A tool entry is only removed if
@@ -86,7 +86,7 @@ These are guarantees, not aspirations. Each one has tests.
 
 Verified by test, not by assertion: killing the process mid-write 20 times leaves the target file
 complete-old or complete-new, never truncated; installing and uninstalling a kit leaves unrelated
-settings byte-identical, including keys ccpanel has never heard of.
+settings byte-identical, including keys ccpanel has never heard of and the file's own indentation.
 
 Built on Linux, and the test suite runs on both Linux and macOS in CI. Windows isn't supported.
 
