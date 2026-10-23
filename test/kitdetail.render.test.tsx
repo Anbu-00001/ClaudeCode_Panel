@@ -64,3 +64,27 @@ describe("the kit screen, after setting a kit up", () => {
     unmount();
   });
 });
+
+describe("the kit screen, for a kit that is already set up", () => {
+  it("highlights the choice that changes nothing, so Enter can't remove it", async () => {
+    const kit = getKit("scope-guard", kitsDir);
+    if (!kit) throw new Error("no kit");
+    const { installKit } = await import("../src/core/kits.js");
+    installKit(kit, resolvePaths(repoDir));
+    const hook = path.join(repoDir, ".claude", "hooks", "guard-important-files.sh");
+    expect(fs.existsSync(hook)).toBe(true);
+
+    let wentBack = false;
+    const { lastFrame, stdin, unmount } = render(
+      <KitDetail kit={kit} repo={resolvePaths(repoDir)} onBack={() => (wentBack = true)} />,
+    );
+    await settle();
+    expect(lastFrame() ?? "").toContain("Keep it");
+    stdin.write("\r");
+    await settle();
+
+    expect(wentBack).toBe(true);
+    expect(fs.existsSync(hook)).toBe(true);
+    unmount();
+  });
+});

@@ -6,12 +6,15 @@ import { z } from "zod";
 import type { RungId } from "./detect.js";
 import { type ClaudePaths, getClaudePaths, type RepoInfo } from "./paths.js";
 import {
+  atomicWriteFile,
+  ccpanelHome,
   DEFAULT_CONTENT_MODE,
   EXECUTABLE_MODE,
   isExecutable,
   type Operation,
   type RecordedChange,
   runTransaction,
+  serializeJson,
   type TransactionResult,
 } from "./write.js";
 
@@ -405,7 +408,29 @@ function matcherOf(entry: unknown): string | undefined {
   return typeof m === "string" ? m : undefined;
 }
 
-function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"): Operation[] {
+/**
+ * What a plan of operations needs beyond the operations themselves: on
+ * install, a place to note which permission values were new (filled in while
+ * the transaction runs); on uninstall, exactly which values to take out.
+ * Both are keyed by settings file, since one kit may patch more than one.
+ */
+interface PermissionPlan {
+  added: Map<string, PermissionLists>;
+  remove: Map<string, PermissionLists>;
+}
+
+/** Kit files the user has edited since install, kept rather than deleted. */
+interface FilePlan {
+  kept: string[];
+}
+
+function buildOperations(
+  kit: Kit,
+  repo: RepoInfo,
+  mode: "install" | "uninstall",
+  permissions: PermissionPlan = { added: new Map(), remove: new Map() },
+  files: FilePlan = { kept: [] },
+): Operation[] {
   const ops: Operation[] = [];
 
   for (const entry of kit.installs) {
@@ -418,7 +443,12 @@ function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"
         filePath: absolutePath,
         keyPath: [Object.keys(patch)[0] ?? "hooks"],
         mutate: (draft) => {
-          applySettingsPatch(draft, patch, mode);
+          const added: PermissionLists = {};
+          applySettingsPatch(draft, patch, mode, {
+            added,
+            remove: permissions.remove.get(absolutePath),
+          });
+          if (mode === "install") permissions.added.set(absolutePath, added);
         },
       });
       continue;
@@ -460,6 +490,12 @@ function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"
     }
 
     if (mode === "uninstall") {
+      // A file the user has changed since install is theirs now: deleting it
+      // would throw away their work. It stays, and the screen says so.
+      if (userEditedKitFile(kit, entry.from, absolutePath)) {
+        files.kept.push(absolutePath);
+        continue;
+      }
       ops.push({ kind: "deleteFile", filePath: absolutePath });
       continue;
     }
@@ -485,6 +521,10 @@ function applySettingsPatch(
   draft: Record<string, unknown>,
   patch: Record<string, unknown>,
   mode: "install" | "uninstall",
+  permissionValues: { added: PermissionLists; remove: PermissionLists | undefined } = {
+    added: {},
+    remove: undefined,
+  },
 ): void {
   for (const [topKey, topValue] of Object.entries(patch)) {
     if (topKey === "hooks" && typeof topValue === "object" && topValue !== null) {
@@ -523,10 +563,19 @@ function applySettingsPatch(
       for (const [listName, values] of Object.entries(topValue as Record<string, unknown>)) {
         if (!Array.isArray(values)) continue;
         const current = Array.isArray(next[listName]) ? (next[listName] as string[]) : [];
-        next[listName] =
-          mode === "install"
-            ? Array.from(new Set([...current, ...(values as string[])]))
-            : current.filter((v) => !(values as string[]).includes(v));
+        if (mode === "install") {
+          permissionValues.added[listName] = (values as string[]).filter(
+            (v) => !current.includes(v),
+          );
+          next[listName] = Array.from(new Set([...current, ...(values as string[])]));
+        } else {
+          // Without a plan (an install from before ccpanel kept records),
+          // fall back to the kit's whole list.
+          const remove = permissionValues.remove
+            ? (permissionValues.remove[listName] ?? [])
+            : (values as string[]);
+          next[listName] = current.filter((v) => !remove.includes(v));
+        }
         if ((next[listName] as string[]).length === 0) delete next[listName];
       }
       if (Object.keys(next).length > 0) draft["permissions"] = next;
@@ -552,6 +601,127 @@ function extractCommand(entry: unknown): string | null {
   return null;
 }
 
+/** True when the file at `target` no longer matches what the kit shipped. */
+function userEditedKitFile(kit: Kit, from: string, target: string): boolean {
+  let current: string;
+  try {
+    current = fs.readFileSync(target, "utf8");
+  } catch {
+    return false; // already gone: nothing to protect
+  }
+  try {
+    return current !== readKitFile(kit, from);
+  } catch {
+    return true; // can't compare against the original, so don't risk it
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Which permission values a kit actually added
+//
+// "Every kit uninstalls exactly what it added" (README). For a permission
+// list that means: not a value the user already had before the kit came
+// along, and not one another installed kit still declares. So install notes
+// which values were new, and uninstall removes only those.
+// ---------------------------------------------------------------------------
+
+type PermissionLists = Record<string, string[]>;
+/** settings file → kit id → the values that kit added, per list. */
+type PermissionLedger = Record<string, Record<string, PermissionLists>>;
+
+export function permissionLedgerPath(): string {
+  return path.join(ccpanelHome(), "kit-permissions.json");
+}
+
+function readPermissionLedger(): PermissionLedger {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(permissionLedgerPath(), "utf8"));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as PermissionLedger)
+      : {};
+  } catch {
+    return {}; // missing or broken: behave as if nothing was recorded
+  }
+}
+
+function writePermissionLedger(ledger: PermissionLedger): void {
+  atomicWriteFile(permissionLedgerPath(), serializeJson(ledger));
+}
+
+function permissionPatchOf(entry: InstallEntry): PermissionLists | null {
+  if (entry.kind !== "settings") return null;
+  const perms = entry.patch["permissions"];
+  if (typeof perms !== "object" || perms === null) return null;
+  const out: PermissionLists = {};
+  for (const [list, values] of Object.entries(perms as Record<string, unknown>)) {
+    if (Array.isArray(values)) out[list] = values.filter((v): v is string => typeof v === "string");
+  }
+  return out;
+}
+
+function mergeLists(into: PermissionLists, from: PermissionLists): PermissionLists {
+  const out: PermissionLists = { ...into };
+  for (const [list, values] of Object.entries(from)) {
+    out[list] = Array.from(new Set([...(out[list] ?? []), ...values]));
+  }
+  return out;
+}
+
+/**
+ * Other kits that count as installed for one settings file: ones ccpanel has
+ * a record of installing there, plus kits whose files are on disk. A
+ * settings-only kit with no record can't be told apart from "the values just
+ * happen to be there", so it doesn't count.
+ */
+function otherInstalledKits(kit: Kit, repo: RepoInfo, file: string, ledger: PermissionLedger) {
+  const out: Array<{ kit: Kit; lists: PermissionLists }> = [];
+  for (const other of loadKits(path.dirname(kit.dir))) {
+    if (other.id === kit.id) continue;
+    for (const entry of other.installs) {
+      const lists = permissionPatchOf(entry);
+      if (!lists || targetPathFor(other, entry, repo) !== file) continue;
+      const hasFiles = other.installs.some(
+        (e) => e.kind !== "settings" && e.kind !== "claudemd" && e.kind !== "mcp",
+      );
+      const recorded = ledger[file]?.[other.id] !== undefined;
+      if (recorded || (hasFiles && isKitInstalled(other, repo))) out.push({ kit: other, lists });
+    }
+  }
+  return out;
+}
+
+/**
+ * Works out, per settings file, which values uninstalling `kit` should take
+ * out, and which values should pass to another installed kit that also
+ * declares them (so the last kit to go still removes them).
+ */
+function planPermissionRemoval(kit: Kit, repo: RepoInfo, ledger: PermissionLedger) {
+  const remove = new Map<string, PermissionLists>();
+  const handOver: Array<{ file: string; kitId: string; lists: PermissionLists }> = [];
+
+  for (const entry of kit.installs) {
+    const declared = permissionPatchOf(entry);
+    if (!declared) continue;
+    const file = targetPathFor(kit, entry, repo);
+    // No record means an install from before records were kept: the best we
+    // can do is the kit's own list, still minus what other kits need.
+    const ours = ledger[file]?.[kit.id] ?? declared;
+    const others = otherInstalledKits(kit, repo, file, ledger);
+
+    const lists: PermissionLists = {};
+    for (const [list, values] of Object.entries(ours)) {
+      lists[list] = values.filter((value) => {
+        const keeper = others.find((o) => o.lists[list]?.includes(value));
+        if (!keeper) return true;
+        handOver.push({ file, kitId: keeper.kit.id, lists: { [list]: [value] } });
+        return false;
+      });
+    }
+    remove.set(file, lists);
+  }
+  return { remove, handOver };
+}
+
 export function installKit(
   kit: Kit,
   repo: RepoInfo,
@@ -560,8 +730,9 @@ export function installKit(
     changes: RecordedChange[],
   ) => void,
 ): TransactionResult {
-  return runTransaction(
-    buildOperations(kit, repo, "install"),
+  const permissions: PermissionPlan = { added: new Map(), remove: new Map() };
+  const result = runTransaction(
+    buildOperations(kit, repo, "install", permissions),
     {
       kind: "kit",
       id: kit.id,
@@ -569,6 +740,23 @@ export function installKit(
     },
     recordUndo,
   );
+  if (result.ok && permissions.added.size > 0) {
+    const ledger = readPermissionLedger();
+    for (const [file, added] of permissions.added) {
+      const byKit = ledger[file] ?? {};
+      // Merged, not replaced: installing twice finds the values already
+      // there, and must not forget that this kit was the one that added them.
+      byKit[kit.id] = mergeLists(byKit[kit.id] ?? {}, added);
+      ledger[file] = byKit;
+    }
+    writePermissionLedger(ledger);
+  }
+  return result;
+}
+
+export interface UninstallResult extends TransactionResult {
+  /** Kit files left in place because the user had edited them. */
+  keptFiles: string[];
 }
 
 export function uninstallKit(
@@ -578,9 +766,12 @@ export function uninstallKit(
     meta: { kind: string; id: string; label: string },
     changes: RecordedChange[],
   ) => void,
-): TransactionResult {
-  return runTransaction(
-    buildOperations(kit, repo, "uninstall"),
+): UninstallResult {
+  const ledger = readPermissionLedger();
+  const { remove, handOver } = planPermissionRemoval(kit, repo, ledger);
+  const files: FilePlan = { kept: [] };
+  const result = runTransaction(
+    buildOperations(kit, repo, "uninstall", { added: new Map(), remove }, files),
     {
       kind: "kit-uninstall",
       id: kit.id,
@@ -588,6 +779,18 @@ export function uninstallKit(
     },
     recordUndo,
   );
+  if (result.ok && remove.size > 0) {
+    for (const file of remove.keys()) {
+      if (ledger[file]) delete ledger[file][kit.id];
+    }
+    for (const { file, kitId, lists } of handOver) {
+      const byKit = ledger[file] ?? {};
+      byKit[kitId] = mergeLists(byKit[kitId] ?? {}, lists);
+      ledger[file] = byKit;
+    }
+    writePermissionLedger(ledger);
+  }
+  return { ...result, keptFiles: result.ok ? files.kept : [] };
 }
 
 /** True when every file the kit installs is present (§9.3, acceptance #11). */

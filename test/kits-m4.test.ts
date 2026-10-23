@@ -197,3 +197,49 @@ describe("voice-input: talking instead of typing", () => {
     expect(insteadOf?.useThisWhen?.length ?? 0).toBeGreaterThan(2);
   });
 });
+
+describe("uninstall takes out only what the kit itself added", () => {
+  const localPath = () => path.join(repoDir, ".claude", "settings.local.json");
+  const allowList = (): string[] =>
+    JSON.parse(fs.readFileSync(localPath(), "utf8")).permissions?.allow ?? [];
+
+  it("keeps a permission the user already had before the kit", () => {
+    fs.mkdirSync(path.dirname(localPath()), { recursive: true });
+    fs.writeFileSync(
+      localPath(),
+      serializeJson({ permissions: { allow: ["Bash(git status *)"] } }),
+    );
+
+    installKit(kit("commit-messages"), repo(), appendUndoEntry);
+    expect(uninstallKit(kit("commit-messages"), repo(), appendUndoEntry).ok).toBe(true);
+
+    expect(allowList()).toEqual(["Bash(git status *)"]);
+  });
+
+  it("keeps values another installed kit still needs, and removes them with the last one", () => {
+    installKit(kit("code-reviewer"), repo(), appendUndoEntry);
+    installKit(kit("commit-messages"), repo(), appendUndoEntry);
+
+    uninstallKit(kit("code-reviewer"), repo(), appendUndoEntry);
+    expect(allowList()).toEqual(
+      expect.arrayContaining(["Bash(git diff *)", "Bash(git status *)", "Bash(git log *)"]),
+    );
+
+    uninstallKit(kit("commit-messages"), repo(), appendUndoEntry);
+    expect(allowList()).toEqual([]);
+  });
+
+  it("keeps a kit file the user has edited, and says which", () => {
+    installKit(kit("code-reviewer"), repo(), appendUndoEntry);
+    const agent = path.join(repoDir, ".claude", "agents", "reviewer.md");
+    const skill = path.join(repoDir, ".claude", "skills", "check", "SKILL.md");
+    fs.appendFileSync(agent, "\nMy own extra rule.\n");
+
+    const result = uninstallKit(kit("code-reviewer"), repo(), appendUndoEntry);
+
+    expect(result.ok).toBe(true);
+    expect(result.keptFiles).toEqual([agent]);
+    expect(fs.readFileSync(agent, "utf8")).toContain("My own extra rule.");
+    expect(fs.existsSync(skill)).toBe(false);
+  });
+});

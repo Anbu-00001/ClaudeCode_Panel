@@ -67,7 +67,9 @@ These are guarantees, not aspirations. Each one has tests.
   stray comma kills every permission rule and hook you had. So every write reads, parses, snapshots,
   validates, writes to a temp file, renames atomically, then re-reads to confirm. A file that
   doesn't parse is never overwritten.
-- **Everything is reversible.** Every kit uninstalls exactly what it added. Every toggle flips back.
+- **Everything is reversible.** Every kit uninstalls exactly what it added: a permission you
+  already had, or one another installed kit still uses, stays put, and a kit file you have edited
+  since is kept and named rather than deleted. Every toggle flips back.
 - **Nothing installs without a preview.**
 - **Secrets are masked** before they reach the screen, the logs, or the clipboard.
 

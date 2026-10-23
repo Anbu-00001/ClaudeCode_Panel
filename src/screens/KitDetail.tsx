@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
@@ -30,6 +31,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const [alreadyInstalled, setAlreadyInstalled] = useState(() => isKitInstalled(kit, repo));
   const [verify, setVerify] = useState<VerifyResult | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [keptFiles, setKeptFiles] = useState<string[]>([]);
 
   const preview = useMemo(() => previewKit(kit, repo), [kit, repo]);
 
@@ -62,13 +64,17 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
     }
     setAlreadyInstalled(false);
     setVerify(null);
+    setKeptFiles(result.keptFiles);
     setStage("done");
   }
 
+  // Enter on whatever is highlighted first should never be the destructive
+  // choice, so "Keep it" leads and "Remove it" is last.
   const actions: ListItem[] = alreadyInstalled
     ? [
-        { key: "uninstall", label: "Remove it" },
+        { key: "keep", label: "Keep it" },
         { key: "files", label: "Show me the files" },
+        { key: "uninstall", label: "Remove it" },
       ]
     : [
         { key: "install", label: "Set it up" },
@@ -79,6 +85,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
     if (item.key === "install") doInstall();
     else if (item.key === "uninstall") doUninstall();
     else if (item.key === "files") setStage("files");
+    else if (item.key === "keep") onBack();
   }
 
   if (stage === "files") {
@@ -152,7 +159,25 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
               </Box>
             </>
           ) : (
-            <Text color="green">Removed. Everything it added is gone.</Text>
+            <Box flexDirection="column">
+              <Text color="green">
+                {keptFiles.length === 0
+                  ? "Removed. Everything it added is gone."
+                  : "Removed, apart from files you had changed."}
+              </Text>
+              {keptFiles.length > 0 ? (
+                <Box flexDirection="column" marginTop={1}>
+                  <Text>These were kept because you had edited them since setting it up:</Text>
+                  {keptFiles.map((f) => (
+                    <Text key={f} dimColor>
+                      {"  "}
+                      {path.relative(repo.projectDir, f) || f}
+                    </Text>
+                  ))}
+                  <Text dimColor>Delete them yourself if you don't want them any more.</Text>
+                </Box>
+              ) : null}
+            </Box>
           )}
         </Box>
         <Footer hints={[{ key: "Esc", label: "back" }]} />
