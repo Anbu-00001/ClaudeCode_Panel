@@ -90,14 +90,33 @@ export interface RevertResult {
   ok: boolean;
   failed: string[];
   entry?: UndoEntry;
+  /** Why nothing was reverted, in words for the user. */
+  message?: string;
 }
 
-/** Reverses one entry. The reversal is itself logged (§10.6). */
+/**
+ * Reverses one entry. The reversal is itself logged (§10.6).
+ *
+ * Refused, with nothing touched, when a file the entry changed has been
+ * written since: putting the old snapshot back would erase that later work.
+ */
 export function revertEntry(uid: string): RevertResult {
   const entry = readUndoLog().find((e) => e.uid === uid);
-  if (!entry) return { ok: false, failed: [], entry: undefined };
+  if (!entry) return { ok: false, failed: [], entry: undefined, message: "No such change." };
 
   const result = revertChanges(entry.changes);
+  if (result.changedSince) {
+    return {
+      ok: false,
+      failed: result.failed,
+      entry,
+      message: `Not undone, and nothing was changed: ${result.changedSince
+        .map((f) => path.basename(f))
+        .join(
+          ", ",
+        )} ${result.changedSince.length === 1 ? "has" : "have"} been changed since, and undoing would throw those changes away.`,
+    };
+  }
   if (result.ok) {
     appendUndoEntry(
       { kind: "undo", id: entry.id, label: `Undid: ${entry.label}` },

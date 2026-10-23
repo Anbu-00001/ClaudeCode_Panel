@@ -118,6 +118,47 @@ describe("undo log (§12.3)", () => {
     expect(fs.existsSync(created)).toBe(false);
   });
 
+  it("refuses to undo a change when the file was written since, keeping the later work", () => {
+    const target = path.join(workDir, "settings.json");
+    fs.writeFileSync(target, serializeJson({ a: 1 }));
+    runTransaction(
+      [
+        {
+          kind: "patchJson",
+          filePath: target,
+          keyPath: ["b"],
+          mutate: (d) => {
+            d["b"] = 2;
+          },
+        },
+      ],
+      meta,
+      appendUndoEntry,
+    );
+    const entry = readUndoLogNewestFirst()[0];
+    // Someone else (Claude Code, the user) changes the file afterwards.
+    fs.writeFileSync(target, serializeJson({ a: 1, b: 2, later: "work" }));
+    const before = fs.readFileSync(target, "utf8");
+
+    const result = revertEntry(entry?.uid as string);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("settings.json has been changed since");
+    expect(fs.readFileSync(target, "utf8")).toBe(before);
+    expect(readUndoLogNewestFirst()[0]?.uid).toBe(entry?.uid);
+  });
+
+  it("refuses an entry logged before changes were fingerprinted", () => {
+    const target = path.join(workDir, "old.json");
+    fs.writeFileSync(target, "{}\n");
+    const entry = appendUndoEntry(meta, [
+      { file: target, op: "patch", backupPath: null, existedBefore: false },
+    ]);
+
+    expect(revertEntry(entry.uid).ok).toBe(false);
+    expect(fs.existsSync(target)).toBe(true);
+  });
+
   it("reports a miss for an unknown entry instead of throwing", () => {
     expect(revertEntry("does-not-exist").ok).toBe(false);
   });

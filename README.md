@@ -73,10 +73,13 @@ These are guarantees, not aspirations. Each one has tests.
   stray comma kills every permission rule and hook you had. So every write reads, parses, snapshots,
   validates, writes to a temp file, renames atomically, then re-reads to confirm. A file that
   doesn't parse is never overwritten.
-- **Everything is reversible.** Every kit uninstalls exactly what it added: a permission you
-  already had, or one another installed kit still uses, stays put, and a kit file you have edited
-  since is kept and named rather than deleted. A tool entry is only removed if ccpanel wrote it,
-  and one of yours with the same name is never replaced. Every toggle flips back.
+- **What it sets up, it can take back out.** Every kit uninstalls exactly what it added: a
+  permission you already had, or one another installed kit still uses, stays put, and a kit file
+  you have edited since is kept and named rather than deleted. A tool entry is only removed if
+  ccpanel wrote it, and one of yours with the same name is never replaced. Every toggle flips
+  back. Before each change, a copy of the file is saved in `~/.claude/ccpanel/backups` (kept for
+  30 days, at most 20 per file) and the change is logged in `~/.claude/ccpanel/undo.jsonl`. There
+  is no Undo screen yet, so restoring one of those copies is done by hand.
 - **Nothing installs without a preview.**
 - **Secrets are masked** before they reach the screen, the logs, or the clipboard.
 

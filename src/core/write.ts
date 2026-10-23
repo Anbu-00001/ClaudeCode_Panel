@@ -466,6 +466,12 @@ export interface RecordedChange {
   secretRedacted?: boolean;
   /** Set when a user edited inside a fenced block we were asked to remove. */
   userModified?: boolean;
+  /**
+   * sha256 of the file's bytes right after this change (null: no file). Undo
+   * restores a whole-file snapshot, so it must first know nothing else has
+   * written the file since, or it would throw that work away.
+   */
+  afterHash?: string | null;
 }
 
 export type WriteFailure =
@@ -752,6 +758,7 @@ export function runTransaction(
       return out;
     }
 
+    result.change.afterHash = contentHash(result.change.file);
     applied.push(result.change);
   }
 
@@ -760,8 +767,48 @@ export function runTransaction(
   return { ok: true, changes: applied };
 }
 
-/** Reverses a previously recorded set of changes (the Undo screen's engine). */
-export function revertChanges(changes: RecordedChange[]): { ok: boolean; failed: string[] } {
+/** sha256 of a file's bytes, or null when there is no file. */
+export function contentHash(filePath: string): string | null {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The files that are no longer as the recorded changes left them. Only the
+ * last change to each file says what it should look like now. A change
+ * logged before hashes were recorded can't be checked, so it counts as
+ * changed: guessing would risk the user's later work.
+ */
+export function filesChangedSince(changes: RecordedChange[]): string[] {
+  const last = new Map<string, RecordedChange>();
+  for (const change of changes) last.set(change.file, change);
+  const changed: string[] = [];
+  for (const [file, change] of last) {
+    if (change.afterHash === undefined || contentHash(file) !== change.afterHash) {
+      changed.push(file);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Reverses a previously recorded set of changes (the Undo screen's engine).
+ *
+ * Reversing restores whole-file snapshots, so it refuses outright, touching
+ * nothing, when any of the files has been written since: by Claude Code, by
+ * the user, or by a later ccpanel change.
+ */
+export function revertChanges(changes: RecordedChange[]): {
+  ok: boolean;
+  failed: string[];
+  changedSince?: string[];
+} {
+  const changedSince = filesChangedSince(changes);
+  if (changedSince.length > 0) return { ok: false, failed: changedSince, changedSince };
+
   const failed: string[] = [];
   for (const change of [...changes].reverse()) {
     try {
