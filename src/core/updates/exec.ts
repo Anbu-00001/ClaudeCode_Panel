@@ -11,6 +11,8 @@ import path from "node:path";
 export interface ExecOptions {
   cwd?: string;
   timeoutMs?: number;
+  /** Extra environment variables, laid over the current environment. */
+  env?: Record<string, string>;
 }
 
 export interface ExecResult {
@@ -47,6 +49,7 @@ export const defaultExec: ExecRunner = (file, args, options = {}) =>
       [...args],
       {
         cwd: options.cwd,
+        env: options.env ? { ...process.env, ...options.env } : undefined,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         encoding: "utf8",
         maxBuffer: MAX_OUTPUT_BYTES,

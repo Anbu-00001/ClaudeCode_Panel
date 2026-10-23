@@ -20,6 +20,8 @@ export interface UpdateCommand {
   display: string;
   /** Claude Code has to be restarted (or /reload-plugins run) to see it (§5.3). */
   needsRestart: boolean;
+  /** Environment variables the command must run with, e.g. git's hardening. */
+  env?: Record<string, string>;
 }
 
 export interface UpdateCheckCommon {

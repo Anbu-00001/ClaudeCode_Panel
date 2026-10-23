@@ -50,8 +50,12 @@ export function formatDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function makeCommand(argv: string[], needsRestart: boolean): UpdateCommand {
-  return { argv, display: argv.join(" "), needsRestart };
+export function makeCommand(
+  argv: string[],
+  needsRestart: boolean,
+  env?: Record<string, string>,
+): UpdateCommand {
+  return { argv, display: argv.join(" "), needsRestart, ...(env ? { env } : {}) };
 }
 
 export function statOrNull(target: string): fs.Stats | null {

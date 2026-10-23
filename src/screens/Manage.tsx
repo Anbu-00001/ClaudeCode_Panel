@@ -279,7 +279,10 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
       // argv as an array, never a shell line — a skill directory called
       // `; rm -rf ~` has to stay a directory name.
       const [file, ...args] = command.argv;
-      const result = await defaultExec(file as string, args, { timeoutMs: 120_000 });
+      const result = await defaultExec(file as string, args, {
+        timeoutMs: 120_000,
+        ...(command.env ? { env: command.env } : {}),
+      });
       setRunning(false);
       setPending(null);
       setRan(

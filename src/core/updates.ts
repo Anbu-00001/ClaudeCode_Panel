@@ -42,7 +42,13 @@ export {
   type ExecRunner,
   findOnPath,
 } from "./updates/exec.js";
-export { fetchGitRemote, findSkillRepoRoot, type GitFetchOutcome } from "./updates/git.js";
+export {
+  fetchGitRemote,
+  findSkillRepoRoot,
+  GIT_HARDENING_ARGS,
+  GIT_HARDENING_ENV,
+  type GitFetchOutcome,
+} from "./updates/git.js";
 export { findSelfUpdateSubcommand, findVersionMarker, type VersionMarker } from "./updates/tool.js";
 export {
   DEFAULT_FRESH_REFS_MS,
@@ -79,7 +85,11 @@ export async function checkSkillUpdate(
   }
 
   // 2. A clone can be compared against refs already on disk, no network.
-  const repoRoot = findSkillRepoRoot(dir);
+  // Only for the user's own skills: a project's .claude/skills came with the
+  // repo the user just opened, and its .git/config is a stranger's to write.
+  // Even hardened, running git there on screen-open is a risk with nothing to
+  // gain — the project's own git workflow already updates those files.
+  const repoRoot = skill.source === "project" ? null : findSkillRepoRoot(dir);
   if (repoRoot) return checkGit(skill, dir, repoRoot, resolved);
 
   // 3. A marker file plus a command of that name is a real, checkable signal.

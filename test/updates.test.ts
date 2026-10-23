@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import { listSkills, type SkillInfo } from "../src/core/skills.js";
 import {
   checkSkillUpdate,
   compareVersions,
+  defaultExec,
   type ExecOptions,
   type ExecResult,
   type ExecRunner,
@@ -16,6 +18,8 @@ import {
   findSelfUpdateSubcommand,
   findSkillRepoRoot,
   findVersionMarker,
+  GIT_HARDENING_ARGS,
+  GIT_HARDENING_ENV,
   type GitUpdateCheck,
   listSkillUpdates,
   type ManualUpdateCheck,
@@ -554,7 +558,7 @@ describe("a skill that is a git clone", () => {
       if (file !== "git") return null;
       const line = args.join(" ");
       if (line.includes("--absolute-git-dir")) {
-        const root = args[1] ?? "";
+        const root = args[args.indexOf("-C") + 1] ?? "";
         return path.join(root, ".git");
       }
       if (line.includes("symbolic-full-name")) return answers.upstream ?? null;
@@ -583,7 +587,15 @@ describe("a skill that is a git clone", () => {
     expect(check.ahead).toBe(0);
     expect(check.upstream).toBe("origin/main");
     expect(check.remoteUrl).toBe("https://example.invalid/skill.git");
-    expect(check.command?.argv).toEqual(["git", "-C", dir, "pull", "--ff-only"]);
+    expect(check.command?.argv).toEqual([
+      "git",
+      ...GIT_HARDENING_ARGS,
+      "-C",
+      dir,
+      "pull",
+      "--ff-only",
+    ]);
+    expect(check.command?.env).toEqual(GIT_HARDENING_ENV);
     // C1: a check never touches the network.
     expect(stub.calls.some((c) => c.args.includes("fetch"))).toBe(false);
   });
@@ -674,6 +686,84 @@ describe("a skill that is a git clone", () => {
   });
 });
 
+describe("a clone someone else wrote the config for", () => {
+  /** A real repo whose .git/config would run a program on `git status`. */
+  function hostileClone(root: string, marker: string): string {
+    const dir = makeSkillDir(root, "hostile");
+    const run = (...args: string[]) =>
+      execFileSync("git", ["-C", dir, ...args], { stdio: "ignore", env: gitTestEnv });
+    run("init", "-q");
+    run("add", ".");
+    run("-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-qm", "x");
+    run("config", "core.fsmonitor", `touch '${marker}'; false`);
+    run("config", "core.hooksPath", path.join(dir, "hooks"));
+    fs.writeFileSync(path.join(dir, "SKILL.md"), "changed\n"); // so status has work to do
+    return dir;
+  }
+
+  const gitTestEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+  const hasGit = (() => {
+    try {
+      execFileSync("git", ["--version"], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!hasGit)("never runs the clone's core.fsmonitor program", async () => {
+    const marker = path.join(work, "fsmonitor-ran");
+    const dir = hostileClone(path.join(fakeHome, ".claude", "skills"), marker);
+
+    // Prove the fixture is armed: plain git status does run it.
+    execFileSync("git", ["-C", dir, "status", "--porcelain"], { stdio: "ignore", env: gitTestEnv });
+    expect(fs.existsSync(marker)).toBe(true);
+    fs.rmSync(marker);
+
+    const check = await checkSkillUpdate(skillAt(dir), {
+      home: fakeHome,
+      env: emptyEnv,
+      exec: defaultExec,
+      now: NOW,
+    });
+    expect(check.method).toBe("git");
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
+  it("never runs git at all for a skill that came with the project", async () => {
+    const project = path.join(work, "project");
+    const dir = makeSkillDir(path.join(project, ".claude", "skills"), "from-repo");
+    fs.mkdirSync(path.join(dir, ".git"));
+
+    const check = await checkSkillUpdate(skillAt(dir, { source: "project" }), {
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
+    });
+    expect(check.method).toBe("manual");
+  });
+
+  it("hardens every git call it makes", async () => {
+    const dir = makeSkillDir(work, "watched");
+    fs.mkdirSync(path.join(dir, ".git"));
+    const stub = makeExec((file) => (file === "git" ? "" : null));
+    await checkSkillUpdate(skillAt(dir), {
+      home: fakeHome,
+      env: emptyEnv,
+      exec: stub.exec,
+      now: NOW,
+    });
+
+    const gitCalls = stub.calls.filter((c) => c.file === "git");
+    expect(gitCalls.length).toBeGreaterThan(0);
+    for (const call of gitCalls) {
+      expect(call.args.slice(0, GIT_HARDENING_ARGS.length)).toEqual([...GIT_HARDENING_ARGS]);
+      expect(call.options?.env).toEqual(GIT_HARDENING_ENV);
+    }
+  });
+});
+
 describe("checking the remote on purpose", () => {
   it("is the one call that touches the network, and reports what it ran", async () => {
     const stub = makeExec(() => "");
@@ -684,8 +774,10 @@ describe("checking the remote on purpose", () => {
     });
 
     expect(outcome.ok).toBe(true);
-    expect(outcome.argv).toEqual(["git", "-C", "/some/repo", "fetch", "--quiet"]);
-    expect(stub.calls[0]?.args).toEqual(["-C", "/some/repo", "fetch", "--quiet"]);
+    const args = [...GIT_HARDENING_ARGS, "-C", "/some/repo", "fetch", "--quiet"];
+    expect(outcome.argv).toEqual(["git", ...args]);
+    expect(stub.calls[0]?.args).toEqual(args);
+    expect(stub.calls[0]?.options?.env).toEqual(GIT_HARDENING_ENV);
   });
 
   it("treats a missing git as an answer, not a crash", async () => {

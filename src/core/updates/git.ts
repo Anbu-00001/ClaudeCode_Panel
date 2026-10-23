@@ -42,6 +42,27 @@ export function findSkillRepoRoot(dir: string): string | null {
   }
 }
 
+/**
+ * A repository's own .git/config is written by whoever made the clone, and a
+ * few settings in it name programs git will run: core.fsmonitor runs on every
+ * `git status`, and hooks run on a pull. Merely opening the Manage screen must
+ * never run someone else's program, so every git call here switches both off
+ * on the command line (which beats the repo's config) and ignores the
+ * system-wide config file too.
+ */
+export const GIT_HARDENING_ARGS: readonly string[] = [
+  "-c",
+  "core.fsmonitor=",
+  "-c",
+  "core.hooksPath=/dev/null",
+];
+export const GIT_HARDENING_ENV: Record<string, string> = { GIT_CONFIG_NOSYSTEM: "1" };
+
+/** The argv after `git` for one hardened call against `repoRoot`. */
+export function gitArgs(repoRoot: string, args: readonly string[]): string[] {
+  return [...GIT_HARDENING_ARGS, "-C", repoRoot, ...args];
+}
+
 export async function gitText(
   exec: ExecRunner,
   repoRoot: string,
@@ -49,7 +70,7 @@ export async function gitText(
 ): Promise<string | null> {
   // -C keeps the repo path an argv element rather than a cwd side effect, and
   // every subcommand used here only reads.
-  const result = await exec("git", ["-C", repoRoot, ...args]);
+  const result = await exec("git", gitArgs(repoRoot, args), { env: GIT_HARDENING_ENV });
   if (!result.ok) return null;
   const text = result.stdout.trim();
   return text === "" ? null : text;
@@ -82,7 +103,9 @@ export async function checkGit(
 
   const remoteName = upstream?.includes("/") ? upstream.slice(0, upstream.indexOf("/")) : "origin";
   const remoteUrl = await gitText(exec, repoRoot, ["config", "--get", `remote.${remoteName}.url`]);
-  const dirtyRaw = await exec("git", ["-C", repoRoot, "status", "--porcelain"]);
+  const dirtyRaw = await exec("git", gitArgs(repoRoot, ["status", "--porcelain"]), {
+    env: GIT_HARDENING_ENV,
+  });
   const dirty = dirtyRaw.ok ? dirtyRaw.stdout.trim() !== "" : null;
   const lastFetchedAt = await readLastFetch(exec, repoRoot);
 
@@ -157,7 +180,9 @@ export async function checkGit(
     summary,
     detail,
     // --ff-only never rewrites or merges: worst case it refuses and nothing changed (C4).
-    command: upstream ? makeCommand(["git", "-C", repoRoot, "pull", "--ff-only"], false) : null,
+    command: upstream
+      ? makeCommand(["git", ...gitArgs(repoRoot, ["pull", "--ff-only"])], false, GIT_HARDENING_ENV)
+      : null,
     repoRoot,
     remoteUrl,
     branch,
@@ -188,8 +213,11 @@ export async function fetchGitRemote(
   options?: UpdateOptions,
 ): Promise<GitFetchOutcome> {
   const resolved = resolveOptions(options);
-  const argv = ["git", "-C", repoRoot, "fetch", "--quiet"];
-  const result = await resolved.exec("git", argv.slice(1), { timeoutMs: FETCH_TIMEOUT_MS });
+  const argv = ["git", ...gitArgs(repoRoot, ["fetch", "--quiet"])];
+  const result = await resolved.exec("git", argv.slice(1), {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    env: GIT_HARDENING_ENV,
+  });
   if (result.ok) return { ok: true, argv, message: "Checked the remote." };
   if (result.failure === "missing") return { ok: false, argv, message: "git isn't installed." };
   if (result.failure === "timeout")

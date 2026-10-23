@@ -22,8 +22,12 @@ export interface RepoInfo {
 
 function resolveGitRoot(cwd: string): string | null {
   try {
-    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    // rev-parse runs no configured programs, but the same switches every
+    // other git call uses cost nothing and keep that true if git changes.
+    const args = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"];
+    const out = execFileSync("git", [...args, "rev-parse", "--show-toplevel"], {
       cwd,
+      env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 2000,
