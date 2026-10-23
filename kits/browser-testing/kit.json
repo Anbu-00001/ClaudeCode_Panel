@@ -17,13 +17,26 @@
       "server": {
         "type": "stdio",
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@latest"]
-      }
+        "args": [
+          "-y",
+          "@playwright/mcp@0.0.83"
+        ]
+      },
+      "replaces": [
+        {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@playwright/mcp@latest"
+          ]
+        }
+      ]
     }
   ],
   "tryThis": "Open localhost:3000 and tell me if the login form works",
   "tryThisExplain": "Start your site first, then ask Claude this in your own words.",
   "explain": "A tool is something extra you plug into Claude so it can reach outside your files. This one gives Claude a real browser it can drive: it opens pages, clicks buttons, types into forms, and reads what came back. You describe what to check in plain English, and it goes and looks.",
-  "honestLimit": "The first run downloads the browser, which takes a minute and needs an internet connection.",
+  "honestLimit": "The first run downloads the browser, which takes a minute and needs an internet connection. It uses one fixed version of the browser tool, so it won't update itself. If this folder already has a tool of yours with the same name, ccpanel leaves yours alone and doesn't set this one up.",
   "uninstallNote": "This removes it from this project. The downloaded browser stays on your computer; nothing else is changed."
 }

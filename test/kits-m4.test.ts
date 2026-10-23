@@ -131,7 +131,8 @@ describe("browser-testing: the MCP install path", () => {
 
     const mcp = JSON.parse(fs.readFileSync(path.join(repoDir, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers.playwright.command).toBe("npx");
-    expect(mcp.mcpServers.playwright.args).toContain("@playwright/mcp@latest");
+    // An exact version, so what runs can't change underneath the user.
+    expect(mcp.mcpServers.playwright.args.join(" ")).toMatch(/@playwright\/mcp@\d+\.\d+\.\d+/);
     expect(mcp.mcpServers.playwright.type).toBe("stdio");
   });
 
@@ -153,6 +154,48 @@ describe("browser-testing: the MCP install path", () => {
     const mcp = JSON.parse(fs.readFileSync(path.join(repoDir, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers.mine).toBeDefined();
     expect(mcp.mcpServers.playwright).toBeUndefined();
+  });
+
+  const mcpFile = () => path.join(repoDir, ".mcp.json");
+  const readMcp = () => JSON.parse(fs.readFileSync(mcpFile(), "utf8"));
+  const theirs = { command: "node", args: ["my-own-playwright.js"] };
+
+  it("never treats, replaces or removes a user's own tool of the same name", () => {
+    fs.writeFileSync(mcpFile(), serializeJson({ mcpServers: { playwright: theirs } }));
+
+    expect(isKitInstalled(kit("browser-testing"), repo())).toBe(false);
+    const preview = previewKit(kit("browser-testing"), repo());
+    expect(preview.conflicts).toHaveLength(1);
+    expect(preview.conflicts[0]?.note).toContain("won't replace it");
+
+    const result = installKit(kit("browser-testing"), repo(), appendUndoEntry);
+    expect(result.ok).toBe(false);
+    expect(result.failure?.reason).toBe("conflict");
+    expect(readMcp().mcpServers.playwright).toEqual(theirs);
+  });
+
+  it("leaves an identical entry the user had before ccpanel on uninstall", () => {
+    const shipped = kit("browser-testing").installs[0] as { server: unknown };
+    fs.writeFileSync(mcpFile(), serializeJson({ mcpServers: { playwright: shipped.server } }));
+    expect(isKitInstalled(kit("browser-testing"), repo())).toBe(true);
+
+    const result = uninstallKit(kit("browser-testing"), repo(), appendUndoEntry);
+
+    expect(result.ok).toBe(true);
+    expect(readMcp().mcpServers.playwright).toEqual(shipped.server);
+    expect(result.keptFiles.join(" ")).toContain('"playwright"');
+  });
+
+  it("updates the entry an earlier version of the kit wrote", () => {
+    const old = { type: "stdio", command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+    fs.writeFileSync(mcpFile(), serializeJson({ mcpServers: { playwright: old } }));
+
+    expect(previewKit(kit("browser-testing"), repo()).conflicts).toHaveLength(0);
+    expect(installKit(kit("browser-testing"), repo(), appendUndoEntry).ok).toBe(true);
+    expect(isKitInstalled(kit("browser-testing"), repo())).toBe(true);
+
+    uninstallKit(kit("browser-testing"), repo(), appendUndoEntry);
+    expect(readMcp().mcpServers?.playwright).toBeUndefined();
   });
 
   it("previews the change without writing anything", () => {

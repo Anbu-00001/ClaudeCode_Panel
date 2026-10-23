@@ -65,7 +65,8 @@ These are guarantees, not aspirations. Each one has tests.
   local files, and your usage is never sent anywhere. It does use the network in these places, and
   only these: the Spending screen runs a pinned version of `ccusage` through `npx` (downloaded the
   first time) and `ccusage` fetches the public model price list; a kit that adds a tool, such as
-  browser testing, has Claude Code fetch that tool with `npx` when it first starts it; and an
+  browser testing, has Claude Code fetch a pinned version of that tool with `npx` when it first
+  starts it; and an
   update you confirm on the Manage screen runs exactly the command it showed you (for example
   `git pull`).
 - **It never corrupts a config file.** Claude Code rejects an invalid settings file *entirely* — one
@@ -74,7 +75,8 @@ These are guarantees, not aspirations. Each one has tests.
   doesn't parse is never overwritten.
 - **Everything is reversible.** Every kit uninstalls exactly what it added: a permission you
   already had, or one another installed kit still uses, stays put, and a kit file you have edited
-  since is kept and named rather than deleted. Every toggle flips back.
+  since is kept and named rather than deleted. A tool entry is only removed if ccpanel wrote it,
+  and one of yours with the same name is never replaced. Every toggle flips back.
 - **Nothing installs without a preview.**
 - **Secrets are masked** before they reach the screen, the logs, or the clipboard.
 

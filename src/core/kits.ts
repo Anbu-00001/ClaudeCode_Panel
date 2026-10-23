@@ -16,6 +16,7 @@ import {
   runTransaction,
   serializeJson,
   type TransactionResult,
+  WriteConflict,
 } from "./write.js";
 
 /**
@@ -70,6 +71,11 @@ const installEntrySchema = z.discriminatedUnion("kind", [
       url: z.string().optional(),
       env: z.record(z.string(), z.string()).optional(),
     }),
+    /**
+     * Server entries earlier versions of this kit wrote. An entry matching
+     * one of these is the kit's own, so it may be updated in place.
+     */
+    replaces: z.array(z.record(z.string(), z.unknown())).optional(),
   }),
   z.looseObject({
     kind: z.literal("settings"),
@@ -327,12 +333,19 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
     }
 
     if (entry.kind === "mcp") {
+      const current = readMcpServer(absolutePath, entry.name);
+      const conflict =
+        entry.scope === "project" &&
+        current !== undefined &&
+        !isKitsOwnServer(entry, current, readMcpLedger()[absolutePath]?.[entry.name]);
       lines.push({
         op: fs.existsSync(absolutePath) ? "change" : "create",
         displayPath,
         absolutePath,
-        note: "tells Claude how to start this tool when it needs it",
-        conflict: false,
+        note: conflict
+          ? `you already have a different tool called "${entry.name}" here, so this won't replace it`
+          : "tells Claude how to start this tool when it needs it",
+        conflict,
       });
       if (entry.scope === "user") {
         warnings.push(
@@ -424,12 +437,93 @@ interface FilePlan {
   kept: string[];
 }
 
+/**
+ * Tool (MCP server) entries: what ccpanel has on record as having written,
+ * and, during an install, which entries it is writing now.
+ */
+interface McpPlan {
+  ledger: McpLedger;
+  written: Array<{ file: string; name: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Which tool entries ccpanel wrote
+//
+// A .mcp.json entry is only a name and a command, so "there is a playwright
+// entry" says nothing about who put it there. Install notes each entry it
+// writes; uninstall removes only those, and only while they still read the
+// way ccpanel wrote them.
+// ---------------------------------------------------------------------------
+
+/** .mcp.json path → server name → the server entry ccpanel wrote there. */
+type McpLedger = Record<string, Record<string, unknown>>;
+
+export function mcpLedgerPath(): string {
+  return path.join(ccpanelHome(), "kit-mcp.json");
+}
+
+function readMcpLedger(): McpLedger {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(mcpLedgerPath(), "utf8"));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as McpLedger)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMcpLedger(ledger: McpLedger): void {
+  atomicWriteFile(mcpLedgerPath(), serializeJson(ledger));
+}
+
+/** JSON equality that ignores key order. */
+function sameJson(a: unknown, b: unknown): boolean {
+  const canonical = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canonical);
+    if (typeof v === "object" && v !== null) {
+      return Object.fromEntries(
+        Object.keys(v)
+          .sort()
+          .map((k) => [k, canonical((v as Record<string, unknown>)[k])]),
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
+
+/**
+ * True when a server entry is this kit's own: exactly what it ships now,
+ * what an earlier version of it shipped, or what ccpanel recorded writing.
+ */
+function isKitsOwnServer(
+  entry: Extract<InstallEntry, { kind: "mcp" }>,
+  current: unknown,
+  recorded: unknown,
+): boolean {
+  if (sameJson(current, entry.server)) return true;
+  if ((entry.replaces ?? []).some((old) => sameJson(current, old))) return true;
+  return recorded !== undefined && sameJson(current, recorded);
+}
+
+function readMcpServer(filePath: string, name: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const servers = (parsed as { mcpServers?: Record<string, unknown> })?.mcpServers;
+    return servers && typeof servers === "object" ? servers[name] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildOperations(
   kit: Kit,
   repo: RepoInfo,
   mode: "install" | "uninstall",
   permissions: PermissionPlan = { added: new Map(), remove: new Map() },
   files: FilePlan = { kept: [] },
+  mcp: McpPlan = { ledger: readMcpLedger(), written: [] },
 ): Operation[] {
   const ops: Operation[] = [];
 
@@ -473,6 +567,7 @@ function buildOperations(
       // session and is known to corrupt under concurrent writes. Skipped here
       // and surfaced as a copyable `claude mcp add` command instead.
       if (entry.scope === "user") continue;
+      const recorded = mcp.ledger[absolutePath]?.[entry.name];
       ops.push({
         kind: "patchJson",
         filePath: absolutePath,
@@ -480,8 +575,28 @@ function buildOperations(
         mutate: (draft) => {
           const servers = (draft["mcpServers"] as Record<string, unknown>) ?? {};
           const next = { ...servers };
-          if (mode === "install") next[entry.name] = entry.server;
-          else delete next[entry.name];
+          const current = next[entry.name];
+          if (mode === "install") {
+            // A tool the user set up themselves under the same name is
+            // theirs: never overwrite it.
+            if (current !== undefined && !isKitsOwnServer(entry, current, recorded)) {
+              throw new WriteConflict(
+                `You already have a different tool called "${entry.name}" in ${path.basename(absolutePath)}, so ccpanel left it alone. Rename or remove yours first if you want this one.`,
+              );
+            }
+            if (current === undefined || !sameJson(current, entry.server)) {
+              mcp.written.push({ file: absolutePath, name: entry.name });
+            }
+            next[entry.name] = entry.server;
+          } else if (current !== undefined) {
+            // Only an entry ccpanel wrote, and still as ccpanel wrote it, is
+            // removed. One the user had first, or has changed since, stays.
+            if (recorded !== undefined && isKitsOwnServer(entry, current, recorded)) {
+              delete next[entry.name];
+            } else {
+              files.kept.push(`${absolutePath} (the "${entry.name}" tool)`);
+            }
+          }
           if (Object.keys(next).length > 0) draft["mcpServers"] = next;
           else delete draft["mcpServers"];
         },
@@ -731,8 +846,9 @@ export function installKit(
   ) => void,
 ): TransactionResult {
   const permissions: PermissionPlan = { added: new Map(), remove: new Map() };
+  const mcp: McpPlan = { ledger: readMcpLedger(), written: [] };
   const result = runTransaction(
-    buildOperations(kit, repo, "install", permissions),
+    buildOperations(kit, repo, "install", permissions, { kept: [] }, mcp),
     {
       kind: "kit",
       id: kit.id,
@@ -750,6 +866,14 @@ export function installKit(
       ledger[file] = byKit;
     }
     writePermissionLedger(ledger);
+  }
+  if (result.ok && mcp.written.length > 0) {
+    const ledger = readMcpLedger();
+    for (const { file, name } of mcp.written) {
+      const entry = kit.installs.find((e) => e.kind === "mcp" && e.name === name);
+      if (entry?.kind === "mcp") ledger[file] = { ...(ledger[file] ?? {}), [name]: entry.server };
+    }
+    writeMcpLedger(ledger);
   }
   return result;
 }
@@ -770,8 +894,12 @@ export function uninstallKit(
   const ledger = readPermissionLedger();
   const { remove, handOver } = planPermissionRemoval(kit, repo, ledger);
   const files: FilePlan = { kept: [] };
+  const mcpLedger = readMcpLedger();
   const result = runTransaction(
-    buildOperations(kit, repo, "uninstall", { added: new Map(), remove }, files),
+    buildOperations(kit, repo, "uninstall", { added: new Map(), remove }, files, {
+      ledger: mcpLedger,
+      written: [],
+    }),
     {
       kind: "kit-uninstall",
       id: kit.id,
@@ -789,6 +917,20 @@ export function uninstallKit(
       ledger[file] = byKit;
     }
     writePermissionLedger(ledger);
+  }
+  if (result.ok) {
+    let changed = false;
+    for (const entry of kit.installs) {
+      if (entry.kind !== "mcp") continue;
+      const file = targetPathFor(kit, entry, repo);
+      if (mcpLedger[file]?.[entry.name] === undefined) continue;
+      // Forgotten once removed; kept in the record if the entry stayed
+      // because the user had changed it, which they now own anyway.
+      delete mcpLedger[file][entry.name];
+      if (Object.keys(mcpLedger[file]).length === 0) delete mcpLedger[file];
+      changed = true;
+    }
+    if (changed) writeMcpLedger(mcpLedger);
   }
   return { ...result, keptFiles: result.ok ? files.kept : [] };
 }
@@ -816,13 +958,10 @@ export function isKitInstalled(kit: Kit, repo: RepoInfo): boolean {
   }
   return mcpEntries.every((entry) => {
     if (entry.scope === "user") return false;
-    try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(targetPathFor(kit, entry, repo), "utf8"));
-      const servers = (parsed as { mcpServers?: Record<string, unknown> })?.mcpServers;
-      return Boolean(servers && entry.name in servers);
-    } catch {
-      return false;
-    }
+    // Only this kit's own entry counts. A user's own tool that happens to
+    // share the name is not this kit being installed.
+    const current = readMcpServer(targetPathFor(kit, entry, repo), entry.name);
+    return current !== undefined && sameJson(current, entry.server);
   });
 }
 

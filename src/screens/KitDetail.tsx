@@ -163,11 +163,13 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
               <Text color="green">
                 {keptFiles.length === 0
                   ? "Removed. Everything it added is gone."
-                  : "Removed, apart from files you had changed."}
+                  : "Removed, apart from things that are yours."}
               </Text>
               {keptFiles.length > 0 ? (
                 <Box flexDirection="column" marginTop={1}>
-                  <Text>These were kept because you had edited them since setting it up:</Text>
+                  <Text>
+                    These were kept because you had changed them, or they were there before:
+                  </Text>
                   {keptFiles.map((f) => (
                     <Text key={f} dimColor>
                       {"  "}
@@ -253,7 +255,7 @@ function describeFailure(failure: unknown): string {
     return "One of your setup files has a typo in it, so it wasn't safe to change. Nothing was touched.";
   }
   if (f.reason === "conflict") {
-    return "A different file is already where this one would go.";
+    return f.message ?? "A different file is already where this one would go.";
   }
   return f.message ?? "Something went wrong.";
 }

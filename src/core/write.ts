@@ -454,6 +454,13 @@ export type WriteFailure =
   | { reason: "conflict"; filePath: string; message: string }
   | { reason: "error"; filePath: string; message: string };
 
+/**
+ * Thrown from a patchJson mutate when the file holds something that isn't
+ * ours to change (a user's own entry under the name a kit wants). The
+ * transaction rolls back and reports it as a conflict, not a crash.
+ */
+export class WriteConflict extends Error {}
+
 export interface TransactionMeta {
   kind: string;
   id: string;
@@ -697,7 +704,7 @@ export function runTransaction(
       result = {
         ok: false,
         failure: {
-          reason: "error",
+          reason: err instanceof WriteConflict ? "conflict" : "error",
           filePath: "filePath" in op ? op.filePath : "(unknown)",
           message: err instanceof Error ? err.message : String(err),
         },
