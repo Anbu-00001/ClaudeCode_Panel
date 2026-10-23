@@ -473,3 +473,80 @@ describe("deletes that don't name their path up front", () => {
     });
   }
 });
+
+describe("commands that reach rm or git another way", () => {
+  // Every one of these, with an edit in src/, would lose work.
+  for (const cmd of [
+    "command rm -rf src",
+    "\\rm -rf src",
+    "env rm -rf src",
+    "env FOO=1 rm -rf src",
+    "nice rm -rf src",
+    "nice -n 5 rm -rf src",
+    "timeout 5 rm -rf src",
+    "timeout -s KILL 5s rm -rf src",
+    "sudo -u root rm -rf src",
+    "nohup rm -rf src",
+    "time rm -rf src",
+    "git checkout .",
+    "git restore .",
+    "git restore --staged --worktree .",
+    "git checkout -- src",
+    "git checkout -f",
+    "git clean -d -f",
+    "git -C . reset --hard",
+    "git -c core.pager=cat -C . reset --hard",
+    "git switch -f main",
+    "echo start && git reset --hard",
+  ]) {
+    it(`asks before: ${cmd}`, () => {
+      fs.appendFileSync(path.join(repo, "src", "file1.ts"), "// edited\n");
+      const out = bash(cmd);
+      expect(warns(out)).toBe(true);
+      expect(reasonOf(out)).toMatch(/1 (file|of them)/);
+    });
+  }
+
+  for (const [cmd, expected] of [
+    ["git stash drop", "git stash"],
+    ["git stash clear", "git stash"],
+    ["git branch -D old-idea", "never merged"],
+    ["git branch --delete --force old-idea", "never merged"],
+    ["git push origin +main", "overwrites the shared branch"],
+    ["git push --force-with-lease", "rewrites the shared history"],
+    ["unlink src/file1.ts", "deletes a file"],
+    ["rsync -a --delete src/ backup/", "destination"],
+    ["truncate -s 0 src/file1.ts", "empties a file"],
+  ] as const) {
+    it(`asks before: ${cmd}`, () => {
+      const out = bash(cmd);
+      expect(warns(out)).toBe(true);
+      expect(reasonOf(out)).toContain(expected);
+    });
+  }
+
+  for (const cmd of [
+    "git restore --staged src/file1.ts",
+    "git clean -n -f",
+    "git checkout -b feature",
+    "git switch -c feature",
+    "git branch -d merged",
+    "git stash list",
+    "git push origin main",
+    "rsync -a --delay-updates src/ backup/",
+    "truncate -s 10 src/file1.ts",
+    "command -v rm",
+    "env | grep PATH",
+  ]) {
+    it(`stays quiet on: ${cmd}`, () => {
+      fs.appendFileSync(path.join(repo, "src", "file1.ts"), "// edited\n");
+      expect(warns(bash(cmd))).toBe(false);
+    });
+  }
+
+  it("still checks the rest of the command after a git step with nothing to lose", () => {
+    const out = bash("git reset --hard && git push --force origin main");
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("shared branch");
+  });
+});

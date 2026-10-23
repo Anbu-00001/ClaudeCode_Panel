@@ -618,6 +618,38 @@ fi
 # Collapse whitespace once so every pattern below can assume single spaces.
 CMD=$(printf '%s' "$COMMAND" | tr '\n\t' '  ' | tr -s ' ')
 
+# Words that run the next word as the command: `command rm`, `env X=1 rm`,
+# `nice -n 5 rm`, `timeout 5 rm`, `sudo rm`, `\rm`. Each is dropped from the
+# start of a command, so the checks below see the rm (or git) they run.
+# Repeated until nothing changes, for `sudo nice rm`.
+V='[^ ;&|]'
+WRAPPER="command( +-p)*|builtin|nohup|exec( +-[cl]+)*|time( +-p)?"
+WRAPPER="$WRAPPER|env( +(-[iv0]+|-u +$V+|--[a-z-]+(=$V+)?|[A-Za-z_][A-Za-z0-9_]*=$V*))*"
+WRAPPER="$WRAPPER|nice( +(-n +-?[0-9]+|-n?-?[0-9]+|--adjustment=-?[0-9]+))*"
+WRAPPER="$WRAPPER|timeout( +(-[sk] +[^ ;&|-]$V*|-[a-zA-Z]+|--[a-z-]+(=$V+)?))* +[0-9.]+[smhd]?"
+WRAPPER="$WRAPPER|sudo( +(-[ugCDhpRrTt] +[^ ;&|-]$V*|-[a-zA-Z]+|--[a-z-]+(=$V+)?))*"
+WRAPPER="$WRAPPER|[A-Za-z_][A-Za-z0-9_]*=$V*"
+CMD=$(printf '%s\n' "$CMD" | sed -E \
+  -e ':a' \
+  -e "s/(^|[;&|(] *)\\\\([A-Za-z])/\\1\\2/g" \
+  -e "s/(^|[;&|(] *)($WRAPPER) +/\\1/g" \
+  -e 'ta')
+
+# The same command, one simple command per line: split at ; & | and ( ),
+# and with git's own options (`git -C dir`, `git -c k=v`) taken out so
+# `git -C . reset --hard` reads as `git reset --hard`. GIT_DIR_ARG keeps the
+# -C folder, since that is where the work would be lost.
+SEGMENTS=$(printf '%s\n' "$CMD" | tr ';&|()' '\n\n\n\n\n' | sed -E -e 's/^ +//' -e 's/ +$//')
+GIT_DIR_ARG=$(printf '%s\n' "$SEGMENTS" \
+  | sed -nE "s/^git( +(-c +$V+|--[a-z-]+(=$V+)?|-[pP]))* +-C +($V+).*/\\4/p" | head -n 1)
+GIT_DIR_ARG=${GIT_DIR_ARG#[\"\']}
+GIT_DIR_ARG=${GIT_DIR_ARG%[\"\']}
+[ -n "$GIT_DIR_ARG" ] || GIT_DIR_ARG="."
+SEGMENTS=$(printf '%s\n' "$SEGMENTS" | sed -E \
+  -e ':g' \
+  -e "s/^git +(-[cC] +$V+|--(git-dir|work-tree|namespace|exec-path)(=$V+)?|--no-pager|--paginate|-[pP]|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks) +/git /" \
+  -e 'tg')
+
 # --- Disk-level: unrecoverable, no further questions asked ------------------
 if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(dd +if=|mkfs(\.[a-z0-9]+)? |shred )' \
    || printf '%s' "$CMD" | grep -qE '> */dev/(sd|nvme|hd|disk)'; then
@@ -650,9 +682,91 @@ if printf '%s' "$CMD" | grep -qE 'terraform +destroy|kubectl +delete|docker +sys
     "loud"
 fi
 
-# --- Git: discards work that was never committed ----------------------------
-if printf '%s' "$CMD" | grep -qE 'git +reset +--hard|git +clean +-[a-z]*f|git +checkout +-- +\.'; then
-  UNSAVED=$(count_unsaved . | head -n 1)
+# --- Git ----------------------------------------------------------------------
+# Sorts one simple command (from SEGMENTS) into what it would lose, in GK:
+#   discard  throws away uncommitted edits (reset --hard, clean -f,
+#            checkout -- / . / -f, restore, switch -f)
+#   stash    drops work put aside with git stash
+#   branch   deletes a branch whether or not it was merged
+#   force    overwrites the remote branch; lease does so more carefully
+# Bash 3.2 reads a regex from a variable reliably, so each one is kept in one.
+RE_FORCE_SHORT=' -[a-zA-Z]*f[a-zA-Z]* '
+RE_DRY_RUN=' (--dry-run|-[a-zA-Z]*n[a-zA-Z]*) '
+RE_WORKTREE=' (--worktree|-[a-zA-Z]*W[a-zA-Z]*) '
+RE_STAGED=' (--staged|-[a-zA-Z]*S[a-zA-Z]*) '
+RE_BRANCH_D=' -[a-zA-Z]*D[a-zA-Z]* '
+RE_BRANCH_DEL=' (--delete|-[a-zA-Z]*d[a-zA-Z]*) '
+RE_PLUS_REFSPEC=' \+[^ ]'
+classify_git() {
+  local s=" $1 "
+  GK=""
+  case "$s" in
+    " git reset "*) case "$s" in *" --hard "*) GK="discard" ;; esac ;;
+    " git clean "*)
+      if { [[ $s == *" --force "* ]] || [[ $s =~ $RE_FORCE_SHORT ]]; } && ! [[ $s =~ $RE_DRY_RUN ]]; then
+        GK="discard"
+      fi
+      ;;
+    " git checkout "*)
+      case "$s" in
+        *" -- "* | *" . "* | *" ./ "* | *" :/ "* | *" --force "*) GK="discard" ;;
+        *) [[ $s =~ $RE_FORCE_SHORT ]] && GK="discard" ;;
+      esac
+      ;;
+    " git restore "*)
+      # Without --staged it puts the working copy back, losing the edits.
+      if [[ $s =~ $RE_WORKTREE ]] || ! [[ $s =~ $RE_STAGED ]]; then GK="discard"; fi
+      ;;
+    " git switch "*)
+      case "$s" in
+        *" --force "* | *" --discard-changes "*) GK="discard" ;;
+        *) [[ $s =~ $RE_FORCE_SHORT ]] && GK="discard" ;;
+      esac
+      ;;
+    " git stash drop "* | " git stash clear "*) GK="stash" ;;
+    " git branch "*)
+      if [[ $s =~ $RE_BRANCH_D ]]; then
+        GK="branch"
+      elif [[ $s =~ $RE_BRANCH_DEL ]] && { [[ $s == *" --force "* ]] || [[ $s =~ $RE_FORCE_SHORT ]]; }; then
+        GK="branch"
+      fi
+      ;;
+    " git push "*)
+      case "$s" in
+        *" --force-with-lease"* | *" --force-if-includes "*) GK="lease" ;;
+        *" --force "* | *" --mirror "*) GK="force" ;;
+        *)
+          if [[ $s =~ $RE_FORCE_SHORT ]] || [[ $s =~ $RE_PLUS_REFSPEC ]]; then GK="force"; fi
+          ;;
+      esac
+      ;;
+  esac
+  return 0
+}
+
+GIT_DISCARD=0
+GIT_STASH=0
+GIT_BRANCH=0
+GIT_FORCE=""
+case "$CMD" in
+  *git*)
+    while IFS= read -r seg; do
+      classify_git "$seg"
+      case "$GK" in
+        discard) GIT_DISCARD=1 ;;
+        stash) GIT_STASH=1 ;;
+        branch) GIT_BRANCH=1 ;;
+        force) GIT_FORCE="force" ;;
+        lease) [ -n "$GIT_FORCE" ] || GIT_FORCE="lease" ;;
+      esac
+    done <<EOF_SEGMENTS
+$SEGMENTS
+EOF_SEGMENTS
+    ;;
+esac
+
+if [ "$GIT_DISCARD" -eq 1 ]; then
+  UNSAVED=$(count_unsaved "$GIT_DIR_ARG" | head -n 1)
   if [ "$UNSAVED" = "unknown" ]; then
     respond_ask \
       "This throws away any changes you haven't committed." \
@@ -665,20 +779,65 @@ if printf '%s' "$CMD" | grep -qE 'git +reset +--hard|git +clean +-[a-z]*f|git +c
       "loud"
   fi
   # Nothing uncommitted means nothing to lose, and outside a repo the command
-  # just fails — stay quiet.
-  exit 0
+  # just fails. Carry on: the rest of the command may still delete something.
 fi
 
-if printf '%s' "$CMD" | grep -qE 'git +push +.*(--force|-f)( |$)'; then
-  case "$CMD" in
-    *--force-with-lease*)
-      respond_ask "This rewrites the shared history on the branch you're pushing to." \
-                  "Teammates who already pulled it will hit conflicts." ;;
-    *)
-      respond_ask "This overwrites the shared branch with your local version." \
-                  "Anything a teammate pushed that you don't have locally is lost." "loud" ;;
-  esac
+case "$GIT_FORCE" in
+  lease)
+    respond_ask "This rewrites the shared history on the branch you're pushing to." \
+                "Teammates who already pulled it will hit conflicts." ;;
+  force)
+    respond_ask "This overwrites the shared branch with your local version." \
+                "Anything a teammate pushed that you don't have locally is lost." "loud" ;;
+esac
+
+if [ "$GIT_STASH" -eq 1 ]; then
+  respond_ask \
+    "This permanently deletes work that was put aside with git stash." \
+    "Once dropped, it can't be got back with an ordinary git command."
 fi
+
+if [ "$GIT_BRANCH" -eq 1 ]; then
+  respond_ask \
+    "This deletes a branch even if its work was never merged anywhere." \
+    "Commits that only that branch has become very hard to get back."
+fi
+
+# --- Other ways to delete or empty files ------------------------------------
+# unlink removes one file; rsync --delete removes whatever the destination
+# has that the source doesn't; truncate -s 0 empties a file in place.
+OTHER_KIND=""
+case "$CMD" in
+  *unlink* | *rsync* | *truncate*)
+    while IFS= read -r seg; do
+      oseg=" $seg "
+      case "$oseg" in
+        " unlink "* | " "*/unlink" "*) OTHER_KIND="unlink" ;;
+        " rsync "* | " "*/rsync" "*)
+          case "$oseg" in *" --del "* | *" --delete"*) OTHER_KIND="rsync" ;; esac ;;
+        " truncate "* | " "*/truncate" "*)
+          case "$oseg" in
+            *" -s 0 "* | *" -s0 "* | *" --size=0 "* | *" --size 0 "*) OTHER_KIND="truncate" ;;
+          esac
+          ;;
+      esac
+      [ -n "$OTHER_KIND" ] && break
+    done <<EOF_SEGMENTS
+$SEGMENTS
+EOF_SEGMENTS
+    ;;
+esac
+case "$OTHER_KIND" in
+  unlink)
+    respond_ask "This deletes a file outright." \
+                "Make sure it's the file you mean before saying yes." ;;
+  rsync)
+    respond_ask "This deletes any file in the destination that the source doesn't have." \
+                "Check the two folders are the right way round before saying yes." ;;
+  truncate)
+    respond_ask "This empties a file, keeping its name but throwing away everything in it." \
+                "There's no undo for this." ;;
+esac
 
 # --- find -delete, find -exec rm, xargs rm ----------------------------------
 # These delete a list of files that only exists when the command runs, so we
