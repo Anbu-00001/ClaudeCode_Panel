@@ -88,3 +88,84 @@ describe("the kit screen, for a kit that is already set up", () => {
     unmount();
   });
 });
+
+const DOWN = "\u001B[B";
+
+describe("the kit screen shows exactly what it does", () => {
+  it("lists the exact rules and hook commands, not just a summary", async () => {
+    const { previewKit } = await import("../src/core/kits.js");
+    const repo = resolvePaths(repoDir);
+    const perms = previewKit(getKit("safe-permissions", kitsDir)!, repo);
+    const details = perms.lines.flatMap((l) => l.details ?? []).join("\n");
+    expect(details).toContain("Runs without asking: Bash(git status *), Bash(git diff *)");
+    expect(details).toContain("Always asks you first: Bash(git diff *--output*)");
+
+    const hook = previewKit(getKit("deletion-warning", kitsDir)!, repo);
+    expect(hook.lines.flatMap((l) => l.details ?? []).join("\n")).toContain(
+      "Runs before Claude uses a tool (Bash|Edit|Write): ${CLAUDE_PROJECT_DIR}/.claude/hooks/warn-before-delete.sh",
+    );
+
+    const { lastFrame, unmount } = show("deletion-warning");
+    await settle();
+    expect(lastFrame() ?? "").toContain("warn-before-delete.sh");
+    unmount();
+  });
+
+  it("scrolls through the whole of a long file instead of cutting it off", async () => {
+    const { lastFrame, stdin, unmount } = show("deletion-warning");
+    await settle();
+    stdin.write(DOWN); // "Show me the files"
+    await settle();
+    stdin.write("\r");
+    await settle();
+    expect(lastFrame() ?? "").toMatch(/Lines 1–\d+ of \d+ · \d+ more below/);
+
+    stdin.write(DOWN);
+    await settle();
+    expect(lastFrame() ?? "").toMatch(/Lines 2–/);
+    stdin.write("\u001B[6~"); // PgDn
+    await settle();
+    expect(lastFrame() ?? "").not.toMatch(/Lines [12]–/);
+    unmount();
+  });
+});
+
+describe("removing a kit asks first, listing what goes", () => {
+  it("shows what will be removed and does nothing until confirmed", async () => {
+    const kit = getKit("scope-guard", kitsDir)!;
+    const { installKit } = await import("../src/core/kits.js");
+    installKit(kit, resolvePaths(repoDir));
+    const hook = path.join(repoDir, ".claude", "hooks", "guard-important-files.sh");
+
+    const { lastFrame, stdin, unmount } = render(
+      <KitDetail kit={kit} repo={resolvePaths(repoDir)} onBack={() => {}} />,
+    );
+    await settle();
+    stdin.write(DOWN);
+    await settle();
+    stdin.write(DOWN); // "Remove it"
+    await settle();
+    stdin.write("\r");
+    await settle();
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Removing it will:");
+    expect(frame).toContain(".claude/hooks/guard-important-files.sh");
+    expect(frame).toContain("No, keep it");
+    expect(fs.existsSync(hook)).toBe(true);
+
+    stdin.write("\r"); // "No, keep it" is highlighted first
+    await settle();
+    expect(fs.existsSync(hook)).toBe(true);
+    expect(lastFrame() ?? "").not.toContain("Removing it will:");
+
+    stdin.write("\r"); // back on "Remove it"
+    await settle();
+    stdin.write(DOWN);
+    await settle();
+    stdin.write("\r"); // "Yes, remove it"
+    await settle();
+    expect(fs.existsSync(hook)).toBe(false);
+    unmount();
+  });
+});

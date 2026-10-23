@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
@@ -12,13 +12,14 @@ import {
   kitHasUpdate,
   postInstallCheck,
   previewKit,
+  previewUninstall,
   uninstallKit,
   type VerifyResult,
 } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 import { appendUndoEntry } from "../core/undo.js";
 
-type Stage = "preview" | "files" | "done" | "failed";
+type Stage = "preview" | "files" | "confirm-uninstall" | "done" | "failed";
 
 interface KitDetailProps {
   kit: Kit;
@@ -34,7 +35,31 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [keptFiles, setKeptFiles] = useState<string[]>([]);
 
+  const [confirmIndex, setConfirmIndex] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const { stdout } = useStdout();
+
   const preview = useMemo(() => previewKit(kit, repo), [kit, repo]);
+  const removal = useMemo(
+    () => (stage === "confirm-uninstall" ? previewUninstall(kit, repo) : []),
+    [stage, kit, repo],
+  );
+
+  // "Show me the files" as one scrollable page: every file, under its name.
+  const fileLines = useMemo(() => {
+    const out: Array<{ text: string; heading: boolean }> = [];
+    for (const f of preview.files) {
+      out.push({ text: f.displayPath, heading: true });
+      for (const line of f.contents.replace(/\n$/, "").split("\n")) {
+        out.push({ text: line, heading: false });
+      }
+      out.push({ text: "", heading: false });
+    }
+    return out;
+  }, [preview]);
+  // Room for the title, the position line and the footer.
+  const pageSize = Math.max(5, (stdout?.rows ?? 24) - 9);
+  const maxTop = Math.max(0, fileLines.length - pageSize);
   // A newer version of the kit than the copy ccpanel put here earlier.
   const hasUpdate = useMemo(
     () => alreadyInstalled && kitHasUpdate(kit, repo),
@@ -42,8 +67,15 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   );
 
   useInput((input, key) => {
+    if (stage === "files") {
+      const clamp = (n: number) => Math.min(maxTop, Math.max(0, n));
+      if (key.upArrow) setScrollTop((t) => clamp(t - 1));
+      else if (key.downArrow) setScrollTop((t) => clamp(t + 1));
+      else if (key.pageUp) setScrollTop((t) => clamp(t - pageSize));
+      else if (key.pageDown || input === " ") setScrollTop((t) => clamp(t + pageSize));
+    }
     if (key.escape) {
-      if (stage === "files") setStage("preview");
+      if (stage === "files" || stage === "confirm-uninstall") setStage("preview");
       else onBack();
     }
     if (input === "q") onBack();
@@ -90,27 +122,114 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
 
   function onSubmit(item: ListItem) {
     if (item.key === "install") doInstall();
-    else if (item.key === "uninstall") doUninstall();
-    else if (item.key === "files") setStage("files");
-    else if (item.key === "keep") onBack();
+    else if (item.key === "uninstall") {
+      // Never one keypress: show exactly what goes, then ask.
+      setConfirmIndex(0);
+      setStage("confirm-uninstall");
+    } else if (item.key === "files") {
+      setScrollTop(0);
+      setStage("files");
+    } else if (item.key === "keep") onBack();
   }
 
   if (stage === "files") {
+    const visible = fileLines.slice(scrollTop, scrollTop + pageSize);
+    const more = fileLines.length - (scrollTop + visible.length);
+    return (
+      <Box flexDirection="column">
+        <Box borderStyle="single" paddingX={1}>
+          <Text bold>{kit.title}</Text>
+        </Box>
+        <Box flexDirection="column" paddingX={1}>
+          {visible.map((line, i) =>
+            line.heading ? (
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+              <Text key={`${scrollTop + i}`} bold>
+                {line.text}
+              </Text>
+            ) : (
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+              <Text key={`${scrollTop + i}`} dimColor wrap="truncate-end">
+                {line.text || " "}
+              </Text>
+            ),
+          )}
+          <Text color="cyan">
+            {fileLines.length === 0
+              ? "This kit adds no files, only the settings shown before."
+              : `Lines ${scrollTop + 1}–${scrollTop + visible.length} of ${fileLines.length}${more > 0 ? ` · ${more} more below` : ""}`}
+          </Text>
+          {preview.files.some((f) => f.sourcePath) ? (
+            <Text dimColor>The full files are in {kit.dir}</Text>
+          ) : null}
+        </Box>
+        <Footer
+          hints={[
+            { key: "↑↓", label: "scroll" },
+            { key: "PgUp/PgDn", label: "page" },
+            { key: "Esc", label: "back" },
+          ]}
+        />
+      </Box>
+    );
+  }
+
+  if (stage === "confirm-uninstall") {
     return (
       <Box flexDirection="column">
         <Box borderStyle="single" paddingX={1}>
           <Text bold>{kit.title}</Text>
         </Box>
         <Box flexDirection="column" paddingX={1} paddingY={1}>
-          {preview.files.map((f) => (
-            <Box key={f.displayPath} flexDirection="column" marginBottom={1}>
-              <Text bold>{f.displayPath}</Text>
-              <Text dimColor>{f.contents.split("\n").slice(0, 40).join("\n")}</Text>
-              {f.contents.split("\n").length > 40 ? <Text dimColor>…</Text> : null}
-            </Box>
-          ))}
+          <Text>Removing it will:</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {removal.length === 0 ? (
+              <Text dimColor> change nothing: none of it is here any more</Text>
+            ) : null}
+            {removal.map((line) => (
+              <Box key={`${line.action}-${line.displayPath}-${line.note}`} flexDirection="column">
+                <Text>
+                  {"  "}
+                  <Text
+                    color={
+                      line.action === "delete" ? "red" : line.action === "keep" ? "green" : "yellow"
+                    }
+                  >
+                    {line.action === "delete" ? "-" : line.action === "keep" ? "=" : "~"}
+                  </Text>
+                  {"  "}
+                  {line.displayPath}
+                  <Text dimColor>{`  ${line.note}`}</Text>
+                </Text>
+                {(line.details ?? []).map((d) => (
+                  <Box key={d} paddingLeft={5}>
+                    <Text>{d}</Text>
+                  </Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+          <Box marginTop={1}>
+            <List
+              items={[
+                { key: "cancel", label: "No, keep it" },
+                { key: "confirm", label: "Yes, remove it" },
+              ]}
+              selectedIndex={confirmIndex}
+              onSelectedIndexChange={setConfirmIndex}
+              onSubmit={(item) => {
+                if (item.key === "confirm") doUninstall();
+                else setStage("preview");
+              }}
+            />
+          </Box>
         </Box>
-        <Footer hints={[{ key: "Esc", label: "back" }]} />
+        <Footer
+          hints={[
+            { key: "Enter", label: "choose" },
+            { key: "Esc", label: "back" },
+          ]}
+        />
       </Box>
     );
   }

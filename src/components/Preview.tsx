@@ -29,6 +29,11 @@ export function Preview({ preview }: { preview: KitPreview }) {
                 {line.note}
               </Text>
             ) : null}
+            {(line.details ?? []).map((d) => (
+              <Box key={d} paddingLeft={12}>
+                <Text>{d}</Text>
+              </Box>
+            ))}
           </Box>
         ))}
       </Box>

@@ -287,6 +287,11 @@ export interface PreviewLine {
   note: string | null;
   /** True when a different file already sits at this path. */
   conflict: boolean;
+  /**
+   * The exact text going in: each permission rule, each command a hook
+   * runs. A summary like "some safe commands" can't be checked; these can.
+   */
+  details?: string[];
 }
 
 export interface KitPreview {
@@ -294,7 +299,7 @@ export interface KitPreview {
   lines: PreviewLine[];
   conflicts: PreviewLine[];
   /** Full contents of each file, for "Show me the files". */
-  files: Array<{ displayPath: string; contents: string }>;
+  files: Array<{ displayPath: string; contents: string; sourcePath?: string }>;
   warnings: string[];
 }
 
@@ -304,7 +309,7 @@ function readKitFile(kit: Kit, from: string): string {
 
 export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
   const lines: PreviewLine[] = [];
-  const files: Array<{ displayPath: string; contents: string }> = [];
+  const files: Array<{ displayPath: string; contents: string; sourcePath?: string }> = [];
   const warnings: string[] = [];
 
   for (const entry of kit.installs) {
@@ -318,6 +323,7 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
         absolutePath,
         note: describeSettingsPatch(entry.patch),
         conflict: false,
+        details: settingsPatchDetails(entry.patch),
       });
       continue;
     }
@@ -356,6 +362,7 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
           ? `you already have a different tool called "${entry.name}" here, so this won't replace it`
           : "tells Claude how to start this tool when it needs it",
         conflict,
+        details: [`Starts it with: ${serverCommandLine(entry.server)}`],
       });
       if (entry.scope === "user") {
         warnings.push(
@@ -398,10 +405,59 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
           : null,
       conflict,
     });
-    files.push({ displayPath, contents });
+    files.push({ displayPath, contents, sourcePath: path.join(kit.dir, entry.from) });
   }
 
   return { kit, lines, conflicts: lines.filter((l) => l.conflict), files, warnings };
+}
+
+const PERMISSION_LIST_LABELS: Record<string, string> = {
+  allow: "Runs without asking",
+  ask: "Always asks you first",
+  deny: "Never allowed",
+};
+
+const HOOK_EVENT_LABELS: Record<string, string> = {
+  PreToolUse: "before Claude uses a tool",
+  PostToolUse: "after Claude uses a tool",
+  PreCompact: "before Claude shortens the conversation",
+  SessionStart: "when a session starts",
+  UserPromptSubmit: "when you send a message",
+  Stop: "when Claude finishes answering",
+};
+
+/** One line per permission list and per hook, with the exact rules and commands. */
+export function settingsPatchDetails(patch: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const [topKey, value] of Object.entries(patch)) {
+    if (topKey === "permissions" && typeof value === "object" && value !== null) {
+      for (const [list, rules] of Object.entries(value as Record<string, unknown>)) {
+        if (!Array.isArray(rules) || rules.length === 0) continue;
+        out.push(`${PERMISSION_LIST_LABELS[list] ?? list}: ${rules.join(", ")}`);
+      }
+      continue;
+    }
+    if (topKey === "hooks" && typeof value === "object" && value !== null) {
+      for (const [event, entries] of Object.entries(value as Record<string, unknown>)) {
+        if (!Array.isArray(entries)) continue;
+        for (const entry of entries) {
+          const command = extractCommand(entry);
+          if (!command) continue;
+          const matcher = matcherOf(entry);
+          const when = HOOK_EVENT_LABELS[event] ?? event;
+          out.push(`Runs ${when}${matcher ? ` (${matcher})` : ""}: ${command}`);
+        }
+      }
+      continue;
+    }
+    out.push(`Sets ${topKey} to ${JSON.stringify(value)}`);
+  }
+  return out;
+}
+
+function serverCommandLine(server: { command?: string; args?: string[]; url?: string }): string {
+  if (server.url) return server.url;
+  return [server.command ?? "", ...(server.args ?? [])].join(" ").trim();
 }
 
 function describeSettingsPatch(patch: Record<string, unknown>): string {
@@ -1052,6 +1108,84 @@ export function uninstallKit(
     if (changed) writeMcpLedger(mcpLedger);
   }
   return { ...result, keptFiles: result.ok ? files.kept : [] };
+}
+
+export interface UninstallPreviewLine {
+  action: "delete" | "change" | "keep";
+  displayPath: string;
+  note: string;
+  details?: string[];
+}
+
+/**
+ * What "Remove it" would do, worked out the same way uninstallKit decides:
+ * shown before anything is touched, so removing is never one keypress.
+ */
+export function previewUninstall(kit: Kit, repo: RepoInfo): UninstallPreviewLine[] {
+  const lines: UninstallPreviewLine[] = [];
+  const { remove } = planPermissionRemoval(kit, repo, readPermissionLedger());
+  const mcpLedger = readMcpLedger();
+
+  for (const entry of kit.installs) {
+    const absolutePath = targetPathFor(kit, entry, repo);
+    const displayPath = path.relative(repo.projectDir, absolutePath) || absolutePath;
+
+    if (entry.kind === "settings") {
+      const details: string[] = [];
+      for (const [list, values] of Object.entries(remove.get(absolutePath) ?? {})) {
+        if (values.length > 0)
+          details.push(`${PERMISSION_LIST_LABELS[list] ?? list}: ${values.join(", ")}`);
+      }
+      const hooks = entry.patch["hooks"];
+      if (hooks !== undefined) details.push(...settingsPatchDetails({ hooks }));
+      if (details.length === 0) continue;
+      lines.push({
+        action: "change",
+        displayPath,
+        note: "takes out only what this kit added",
+        details,
+      });
+      continue;
+    }
+
+    if (entry.kind === "claudemd") {
+      let present = false;
+      try {
+        present = findFencedBlock(fs.readFileSync(absolutePath, "utf8"), entry.blockId) !== null;
+      } catch {
+        present = false;
+      }
+      if (present) {
+        lines.push({ action: "change", displayPath, note: "removes the section this kit added" });
+      }
+      continue;
+    }
+
+    if (entry.kind === "mcp") {
+      if (entry.scope === "user") continue;
+      const current = readMcpServer(absolutePath, entry.name);
+      if (current === undefined) continue;
+      const recorded = mcpLedger[absolutePath]?.[entry.name];
+      lines.push(
+        recorded !== undefined && isKitsOwnServer(entry, current, recorded)
+          ? { action: "change", displayPath, note: `removes the "${entry.name}" tool entry` }
+          : {
+              action: "keep",
+              displayPath,
+              note: `keeps the "${entry.name}" tool entry: ccpanel didn't write it as it is now`,
+            },
+      );
+      continue;
+    }
+
+    if (!fs.existsSync(absolutePath)) continue;
+    lines.push(
+      userEditedKitFile(kit, entry.from, absolutePath)
+        ? { action: "keep", displayPath, note: "you've changed it, so it stays" }
+        : { action: "delete", displayPath, note: "deletes this file" },
+    );
+  }
+  return lines;
 }
 
 /** True when every file the kit installs is present (§9.3, acceptance #11). */

@@ -80,7 +80,8 @@ These are guarantees, not aspirations. Each one has tests.
   back. Before each change, a copy of the file is saved in `~/.claude/ccpanel/backups` (kept for
   30 days, at most 20 per file) and the change is logged in `~/.claude/ccpanel/undo.jsonl`. There
   is no Undo screen yet, so restoring one of those copies is done by hand.
-- **Nothing installs without a preview.**
+- **Nothing installs without a preview**, and the preview lists the exact permission rules and
+  hook commands it adds. Removing a kit shows what will go and asks before doing it.
 - **Secrets are masked** before they reach the screen, the logs, or the clipboard.
 
 Verified by test, not by assertion: killing the process mid-write 20 times leaves the target file
