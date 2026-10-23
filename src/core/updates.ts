@@ -93,8 +93,11 @@ export async function checkSkillUpdate(
   if (repoRoot) return checkGit(skill, dir, repoRoot, resolved);
 
   // 3. A marker file plus a command of that name is a real, checkable signal.
+  // Not for a project's skills: the repo chose the marker's name, so asking
+  // "<name> --version" and "<name> --help" would let a stranger's repo pick a
+  // program on this machine for ccpanel to run just by opening a screen.
   const marker = findVersionMarker(dir, skill.name);
-  if (marker) {
+  if (marker && skill.source !== "project") {
     for (const candidate of marker.candidates) {
       const toolPath = findOnPath(candidate, resolved.env);
       if (toolPath) return checkTool(skill, dir, marker, candidate, toolPath, resolved);

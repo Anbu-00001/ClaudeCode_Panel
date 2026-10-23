@@ -852,6 +852,18 @@ describe("a skill installed by a tool that is on PATH", () => {
       return null;
     });
 
+  it("never runs a command named by a project's skill, which came with the repo", async () => {
+    const skill = { ...markedSkill("sometool", "0.9.30"), source: "project" as const };
+    const check = await checkSkillUpdate(skill, {
+      home: fakeHome,
+      env: binEnv(),
+      exec: forbiddenExec,
+      now: NOW,
+    });
+
+    expect(check.method).not.toBe("tool");
+  });
+
   it("is behind when the installed tool has moved on", async () => {
     const skill = markedSkill("sometool", "0.9.30");
     const check = (await checkSkillUpdate(skill, {
