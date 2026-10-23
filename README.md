@@ -82,7 +82,7 @@ Verified by test, not by assertion: killing the process mid-write 20 times leave
 complete-old or complete-new, never truncated; installing and uninstalling a kit leaves unrelated
 settings byte-identical, including keys ccpanel has never heard of.
 
-Linux only in v1.
+Built on Linux, and the test suite runs on both Linux and macOS in CI. Windows isn't supported.
 
 ## Run it in any folder
 

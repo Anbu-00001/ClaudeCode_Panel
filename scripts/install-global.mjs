@@ -41,6 +41,43 @@ function run(args, options = {}) {
   return result;
 }
 
+/**
+ * The help for the one failure people actually hit: Node installed system-wide
+ * (a distro package, the official .pkg), so npm's global folder belongs to
+ * root. The common advice is to install as root, which runs a package's
+ * install scripts as root too; pointing npm at a folder in your own home is
+ * the safer fix.
+ */
+const EACCES_HELP = [
+  "",
+  "npm wasn't allowed to write to its global folder. That usually means Node was",
+  "installed for the whole system, so the folder belongs to the administrator.",
+  "Rather than installing as the administrator, point npm at a folder in your",
+  "home and run this again:",
+  "",
+  "  npm config set prefix ~/.local",
+  "",
+  "and make sure that folder's bin is on your PATH (add to ~/.bashrc or ~/.zshrc):",
+  "",
+  '  export PATH="$HOME/.local/bin:$PATH"',
+].join("\n");
+
+/** Runs `npm install -g`, returning null on success or the exit code to leave with. */
+function installGlobally(tarball) {
+  // stderr is captured (and echoed) so a permissions failure can be spotted.
+  const result = spawnSync(npm, ["install", "-g", tarball], {
+    cwd: root,
+    stdio: ["inherit", "inherit", "pipe"],
+    encoding: "utf8",
+  });
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.status === 0) return null;
+  if (/EACCES|EPERM|permission denied/i.test(result.stderr ?? "")) console.error(EACCES_HELP);
+  return result.status ?? 1;
+}
+
+let installFailed = null;
+
 console.log("Building…");
 run(["run", "build"]);
 
@@ -49,7 +86,8 @@ const stage = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-install-"));
 try {
   console.log("Packing…");
   // npm prints its progress notices on stderr and the tarball name on stdout.
-  const packed = execFileSync(npm, ["pack", "--pack-destination", stage], {
+  // --ignore-scripts: prepack would only rebuild what was built a moment ago.
+  const packed = execFileSync(npm, ["pack", "--ignore-scripts", "--pack-destination", stage], {
     cwd: root,
     encoding: "utf8",
   })
@@ -62,10 +100,11 @@ try {
   }
 
   console.log("Installing…");
-  run(["install", "-g", tarball]);
+  installFailed = installGlobally(tarball);
 } finally {
   fs.rmSync(stage, { recursive: true, force: true });
 }
+if (installFailed !== null) process.exit(installFailed);
 
 // Tell the truth about whether the command is actually reachable. npm can
 // install happily into a folder that is not on PATH, and then `ccpanel` just

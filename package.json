@@ -4,6 +4,25 @@
   "description": "Discover what Claude Code can do that you aren't using yet, and set it up in one keypress.",
   "type": "module",
   "license": "MIT",
+  "author": "Anbu-00001",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anbu-00001/ClaudeCode_Panel.git"
+  },
+  "homepage": "https://github.com/Anbu-00001/ClaudeCode_Panel#readme",
+  "bugs": {
+    "url": "https://github.com/Anbu-00001/ClaudeCode_Panel/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "cli",
+    "tui",
+    "ink",
+    "mcp",
+    "skills",
+    "hooks"
+  ],
   "bin": {
     "ccpanel": "./dist/cli.js"
   },
@@ -13,6 +32,7 @@
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prepack": "npm run build",
     "start": "npm run build && node dist/cli.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -39,7 +39,9 @@ beforeAll(() => {
   execFileSync("npm", ["run", "build"], { cwd: root, stdio: "pipe" });
   // --dry-run writes no tarball but reports exactly the files one would hold,
   // which is the only honest way to ask "would this reach the user's machine".
-  const out = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+  // --ignore-scripts: the build just ran, and prepack's output would land in
+  // the JSON on stdout.
+  const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -183,5 +185,30 @@ describe("installing the command", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
     expect(code).not.toMatch(/\bsudo\b/);
+  });
+
+  it("says how to fix a global folder the user can't write to", () => {
+    const script = fs.readFileSync(path.join(root, "scripts", "install-global.mjs"), "utf8");
+    expect(script).toMatch(/EACCES/);
+    expect(script).toContain("npm config set prefix ~/.local");
+  });
+});
+
+describe("the published package", () => {
+  it("builds itself before packing, so a tarball never ships a stale dist", () => {
+    expect(pkg.scripts["prepack"]).toBe("npm run build");
+  });
+
+  it("says where it comes from", () => {
+    const meta = pkg as unknown as {
+      repository?: { url?: string };
+      homepage?: string;
+      bugs?: { url?: string };
+      keywords?: string[];
+    };
+    expect(meta.repository?.url).toContain("github.com/Anbu-00001/ClaudeCode_Panel");
+    expect(meta.homepage).toContain("github.com/Anbu-00001/ClaudeCode_Panel");
+    expect(meta.bugs?.url).toContain("/issues");
+    expect(meta.keywords).toContain("claude-code");
   });
 });
