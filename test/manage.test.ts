@@ -393,3 +393,19 @@ describe("switching a plugin on and off", () => {
     expect(calls[0]?.[1]).toEqual(["plugin", "disable", "evil; rm -rf /"]);
   });
 });
+
+describe("a tool's start command is masked one argument at a time", () => {
+  it("hides the value after a secret flag, which joining first would miss", () => {
+    fs.writeFileSync(
+      path.join(repoDir, ".mcp.json"),
+      serializeJson({
+        mcpServers: {
+          db: { command: "db-mcp", args: ["--api-key", "plainlookingvalue", "--port", "5432"] },
+        },
+      }),
+    );
+    const summary = listTools(repo()).find((t) => t.name === "db")?.summary ?? "";
+    expect(summary).not.toContain("plainlookingvalue");
+    expect(summary).toContain("--port 5432");
+  });
+});

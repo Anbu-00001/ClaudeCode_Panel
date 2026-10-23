@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { maskDeep, maskText } from "./mask.js";
 import { getClaudePaths, type RepoInfo } from "./paths.js";
 
 /**
@@ -49,13 +50,20 @@ function readJson(filePath: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * How a server starts, masked argument by argument. Masking after joining
+ * would miss a secret that only shows as one: ["--api-key", "abc"] joined
+ * reads as plain text, and a long token next to other words no longer looks
+ * like a token on its own.
+ */
 function summarise(server: unknown): string {
   if (typeof server !== "object" || server === null) return "";
   const s = server as { command?: unknown; args?: unknown; url?: unknown; type?: unknown };
-  if (typeof s.url === "string") return s.url;
+  if (typeof s.url === "string") return maskText(s.url);
   if (typeof s.command === "string") {
-    const args = Array.isArray(s.args) ? s.args.filter((a) => typeof a === "string").join(" ") : "";
-    return `${s.command} ${args}`.trim();
+    const args = Array.isArray(s.args) ? s.args.filter((a) => typeof a === "string") : [];
+    const masked = maskDeep([s.command, ...args]) as string[];
+    return masked.join(" ").trim();
   }
   return typeof s.type === "string" ? s.type : "";
 }

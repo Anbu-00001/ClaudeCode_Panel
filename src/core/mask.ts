@@ -1,7 +1,7 @@
 /**
  * Secret masking (§12.4).
  *
- * Masking happens before a value reaches a render, a log, or the clipboard.
+ * Masking happens before a value reaches a render or a log.
  * The rule deliberately errs toward over-masking: showing dots where a real
  * secret wasn't needed is a cosmetic problem, leaking one is not.
  */
@@ -9,7 +9,7 @@
 export const MASK = "••••••••";
 
 /** Keys whose values are treated as secret regardless of what they look like. */
-const SECRET_KEY_PATTERN = /(key|token|secret|password|credential|auth)/i;
+const SECRET_KEY_PATTERN = /(key|token|secret|pass|pwd|bearer|credential|auth)/i;
 
 /** Recognisable credential shapes, checked when the key name gives nothing away. */
 const CREDENTIAL_VALUE_PATTERNS: RegExp[] = [
@@ -24,6 +24,8 @@ const CREDENTIAL_VALUE_PATTERNS: RegExp[] = [
   /^(?:AKIA|ASIA)[0-9A-Z]{16}$/, // AWS access key id (long-term / temporary)
   /^npm_[A-Za-z0-9]{36}$/, // npm access token
   /^AIza[0-9A-Za-z_-]{35}$/, // Google API key
+  /^(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+$/, // Stripe secret / restricted key
+  /^glpat-[A-Za-z0-9_-]+$/, // GitLab personal access token
   /^[A-Za-z0-9+/_-]{40,}={0,2}$/, // 40+ chars of base64-ish entropy
 ];
 
@@ -116,8 +118,21 @@ export function maskText(text: string): string {
     /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
     /\bnpm_[A-Za-z0-9]{36}\b/g,
     /\bAIza[0-9A-Za-z_-]{35}/g,
+    /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g,
+    /\bglpat-[A-Za-z0-9_-]{8,}/g,
   ];
   for (const re of inlinePatterns) out = out.replace(re, MASK);
+
+  // An HTTP auth header's credential: "Authorization: Bearer abc".
+  // Backslashes and quotes end the value, so masking text that is itself
+  // JSON (the undo log) can't unbalance an escaped quote.
+  out = out.replace(/\b(Bearer)\s+[^\s"'\\]+/gi, `$1 ${MASK}`);
+
+  // A variable named like a secret, set inline: DB_PASSWORD=hunter2 npm start.
+  out = out.replace(
+    /\b([A-Za-z0-9_]*(?:PASS|PWD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*=)("[^"\\]*"|'[^'\\]*'|[^\s"'&\\]+)/gi,
+    (_m, name: string) => `${name}${MASK}`,
+  );
 
   // A URL's userinfo: keep the user name, hide the password. With no
   // password, a long "user" is usually the token itself (https://TOKEN@host),

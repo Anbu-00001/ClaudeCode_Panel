@@ -82,7 +82,7 @@ These are guarantees, not aspirations. Each one has tests.
   is no Undo screen yet, so restoring one of those copies is done by hand.
 - **Nothing installs without a preview**, and the preview lists the exact permission rules and
   hook commands it adds. Removing a kit shows what will go and asks before doing it.
-- **Secrets are masked** before they reach the screen, the logs, or the clipboard.
+- **Secrets are masked** before they reach the screen or the logs.
 
 Verified by test, not by assertion: killing the process mid-write 20 times leaves the target file
 complete-old or complete-new, never truncated; installing and uninstalling a kit leaves unrelated

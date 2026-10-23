@@ -130,3 +130,43 @@ describe("secrets that hide inside ordinary-looking values", () => {
     expect(masked.env["DATABASE_URL"]).toBe(`postgres://u:${MASK}@h/db`);
   });
 });
+
+describe("more credential shapes", () => {
+  it("recognises Stripe and GitLab keys, alone and inside text", () => {
+    for (const v of [
+      "sk_test_EXAMPLEnotARealKey000000",
+      "rk_live_EXAMPLEnotARealKey00",
+      "glpat-xxxxxxxxxxxxxxxxxxxx",
+    ]) {
+      expect(looksLikeSecret(v), v).toBe(true);
+      expect(maskText(`use ${v} here`)).toBe(`use ${MASK} here`);
+    }
+  });
+
+  it("masks a bearer token but keeps the header readable", () => {
+    expect(maskText("curl -H 'Authorization: Bearer abc.def-123' https://x")).toBe(
+      `curl -H 'Authorization: Bearer ${MASK}' https://x`,
+    );
+  });
+
+  it("masks a secret-named variable set inline", () => {
+    expect(maskText("DB_PASSWORD=hunter2 MY_PWD=x API_KEY='a b' GH_TOKEN=t npm start")).toBe(
+      `DB_PASSWORD=${MASK} MY_PWD=${MASK} API_KEY=${MASK} GH_TOKEN=${MASK} npm start`,
+    );
+    expect(maskText("NODE_ENV=production PORT=3000")).toBe("NODE_ENV=production PORT=3000");
+  });
+
+  it("never breaks the JSON of a line it masks", () => {
+    const line = JSON.stringify({ command: 'SECRET="a\\"b" run', h: "Bearer x\\y" });
+    expect(() => JSON.parse(maskText(line))).not.toThrow();
+  });
+
+  it("treats keys named pass, pwd or bearer as secret", () => {
+    expect(maskDeep({ db_pass: "x", pwd: "y", bearer: "z", name: "n" })).toEqual({
+      db_pass: MASK,
+      pwd: MASK,
+      bearer: MASK,
+      name: "n",
+    });
+  });
+});
