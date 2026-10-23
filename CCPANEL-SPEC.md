@@ -377,7 +377,7 @@ Web dashboard · profiles/snapshots · session browser · hooks editor · permis
 - **Runtime:** Node 18+. Claude Code already requires Node, so it's guaranteed present.
 - **TUI:** [Ink](https://github.com/vadimdemedes/ink) (React for terminals).
 - **Language:** TypeScript, strict.
-- **Distribution:** `npx ccpanel` primary; `npm i -g ccpanel` secondary. Clone-and-run must
+- **Distribution:** `npx ccpanel-cli` primary; `npm i -g ccpanel-cli` secondary (the bare `ccpanel` npm name is taken by an unrelated package). Clone-and-run must
   also work: `git clone && npm i && npm start`.
 - **Cold start budget: under 1.5s to first paint.**
 - **License:** MIT, from day one.
@@ -1145,4 +1145,4 @@ installing `postgres` sees *"Lets Claude query your database"* rather than
 > plain English, and sets it up when you press Enter. No jargon, no config files, no
 > tutorials — arrow keys and Enter get you everywhere. It never talks to an AI and never
 > spends your money; everything on screen is read from files already on your computer.
-> `npx ccpanel`.
+> `npx ccpanel-cli`.

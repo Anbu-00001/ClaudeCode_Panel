@@ -1,6 +1,6 @@
 {
-  "name": "ccpanel",
-  "version": "0.1.0",
+  "name": "ccpanel-cli",
+  "version": "0.2.0",
   "description": "Discover what Claude Code can do that you aren't using yet, and set it up in one keypress.",
   "type": "module",
   "license": "MIT",
@@ -17,7 +17,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "install-global": "node scripts/install-global.mjs",
-    "uninstall-global": "npm rm -g ccpanel",
+    "uninstall-global": "npm rm -g ccpanel-cli",
     "refresh-commands": "node scripts/refresh-commands.mjs"
   },
   "dependencies": {

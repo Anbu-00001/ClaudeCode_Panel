@@ -6,10 +6,12 @@ and Enter get you everywhere. It never talks to an AI and never spends your mone
 screen is read from files already on your computer.
 
 ```
-npx ccpanel
+npx ccpanel-cli
 ```
 
-Not on npm yet — until it is, see [Run it in any folder](#run-it-in-any-folder) below.
+The package is called `ccpanel-cli` (the name `ccpanel` on npm belongs to an unrelated project — do
+not run `npx ccpanel`). Once installed, the command you type is still `ccpanel`. Not on npm yet —
+until it is, see [Run it in any folder](#run-it-in-any-folder) below.
 
 ---
 
