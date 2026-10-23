@@ -1,5 +1,4 @@
 import { homedir } from "node:os";
-import path from "node:path";
 import type { SkillInfo } from "../skills.js";
 import { defaultExec, type ExecRunner } from "./exec.js";
 
