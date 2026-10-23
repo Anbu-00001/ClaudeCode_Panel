@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { maskDeep } from "./mask.js";
+import { gitExcludeFile } from "./paths.js";
 import { validateByFilename } from "./validate.js";
 
 /**
@@ -251,6 +252,36 @@ export function sweepStaleTempFiles(dirPath: string): string[] {
     } catch {}
   }
   return removed;
+}
+
+/**
+ * Adds `filePath` to the repository's own ignore list (.git/info/exclude) so
+ * git doesn't offer to commit it. Does nothing outside a repository, when the
+ * line is already there, or if the list can't be written: this is a
+ * courtesy, never a reason to fail the change that prompted it.
+ */
+export function ensureGitExcluded(filePath: string): void {
+  try {
+    const exclude = gitExcludeFile(path.dirname(filePath));
+    if (!exclude) return;
+    const rel = path.relative(realTarget(exclude.root), realTarget(filePath));
+    if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return;
+    const pattern = `/${rel.split(path.sep).join("/")}`;
+    let current = "";
+    try {
+      current = fs.readFileSync(exclude.file, "utf8");
+    } catch {
+      /* no list yet */
+    }
+    const lines = current.split(/\r?\n/).map((l) => l.trim());
+    if (lines.includes(pattern) || lines.includes(pattern.slice(1))) return;
+    const sep = current === "" || current.endsWith("\n") ? "" : "\n";
+    atomicWriteFile(exclude.file, `${current}${sep}${pattern}\n`, {
+      mode: currentMode(exclude.file) ?? DEFAULT_CONTENT_MODE,
+    });
+  } catch {
+    /* best effort */
+  }
 }
 
 export function appendLine(filePath: string, line: string): void {
@@ -878,6 +909,21 @@ export function runTransaction(
 
     result.change.afterHash = contentHash(result.change.file);
     applied.push(result.change);
+  }
+
+  // A personal settings file ccpanel just created would otherwise show up in
+  // `git status`, one `git add .` away from being committed for everyone.
+  if (meta.projectDir) {
+    const localSettings = path.join(
+      path.resolve(meta.projectDir),
+      ".claude",
+      "settings.local.json",
+    );
+    for (const change of applied) {
+      if (!change.existedBefore && path.resolve(change.file) === localSettings) {
+        ensureGitExcluded(localSettings);
+      }
+    }
   }
 
   // 9. Record the whole install as one undo entry.

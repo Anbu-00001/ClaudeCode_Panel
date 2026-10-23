@@ -409,3 +409,30 @@ describe("a tool's start command is masked one argument at a time", () => {
     expect(summary).toContain("--port 5432");
   });
 });
+
+describe("a personal settings file ccpanel creates", () => {
+  const exclude = () => path.join(repoDir, ".git", "info", "exclude");
+  const status = () =>
+    execSync("git status --porcelain --untracked-files=all", { cwd: repoDir, encoding: "utf8" });
+
+  it("is added to the repository's own ignore list, so git doesn't offer to commit it", () => {
+    setSkillState(repo(), "some-skill", "off");
+    expect(fs.existsSync(localSettings())).toBe(true);
+    expect(fs.readFileSync(exclude(), "utf8")).toContain("/.claude/settings.local.json\n");
+    expect(status()).not.toContain("settings.local.json");
+
+    // Only once, however many changes follow.
+    setSkillState(repo(), "other-skill", "off");
+    const lines = fs.readFileSync(exclude(), "utf8").split("\n");
+    expect(lines.filter((l) => l === "/.claude/settings.local.json")).toHaveLength(1);
+  });
+
+  it("leaves the ignore list alone when the file was already there", () => {
+    fs.mkdirSync(path.dirname(localSettings()), { recursive: true });
+    fs.writeFileSync(localSettings(), "{}\n");
+    const before = fs.existsSync(exclude()) ? fs.readFileSync(exclude(), "utf8") : null;
+    setSkillState(repo(), "some-skill", "off");
+    const after = fs.existsSync(exclude()) ? fs.readFileSync(exclude(), "utf8") : null;
+    expect(after).toBe(before);
+  });
+});

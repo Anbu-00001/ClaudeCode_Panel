@@ -20,12 +20,16 @@ export interface RepoInfo {
   ancestorDirs: string[];
 }
 
-function resolveGitRoot(cwd: string): string | null {
+/**
+ * Runs `git rev-parse <args>` in `cwd` and returns its trimmed output, or
+ * null when git isn't there or this isn't a repository.
+ */
+function gitRevParse(cwd: string, args: string[]): string | null {
   try {
     // rev-parse runs no configured programs, but the same switches every
     // other git call uses cost nothing and keep that true if git changes.
-    const args = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"];
-    const out = execFileSync("git", [...args, "rev-parse", "--show-toplevel"], {
+    const hardened = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"];
+    const out = execFileSync("git", [...hardened, "rev-parse", ...args], {
       cwd,
       env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
       encoding: "utf8",
@@ -37,6 +41,23 @@ function resolveGitRoot(cwd: string): string | null {
   } catch {
     return null;
   }
+}
+
+function resolveGitRoot(cwd: string): string | null {
+  return gitRevParse(cwd, ["--show-toplevel"]);
+}
+
+/**
+ * The repository's own ignore list (.git/info/exclude, or wherever a
+ * worktree keeps it) and the folder its patterns are relative to. Null
+ * outside a git repository. Unlike .gitignore, this file is never committed,
+ * so adding to it changes nothing anyone else sees.
+ */
+export function gitExcludeFile(dir: string): { file: string; root: string } | null {
+  const root = resolveGitRoot(dir);
+  const rel = root ? gitRevParse(dir, ["--git-path", "info/exclude"]) : null;
+  if (!root || !rel) return null;
+  return { file: path.resolve(dir, rel), root };
 }
 
 function realOrResolved(p: string): string {
