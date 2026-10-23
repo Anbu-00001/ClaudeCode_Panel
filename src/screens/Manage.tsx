@@ -1,15 +1,16 @@
-import { Box, Text, useInput } from "ink";
 import fs from "node:fs";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Text, useInput } from "ink";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
+import { maskText } from "../core/mask.js";
 import { getClaudePaths, type RepoInfo } from "../core/paths.js";
 import {
-  STATE_LABEL,
-  STATE_SUBLABEL,
-  type SkillInfo,
   listSkills,
   nextState,
+  type SkillInfo,
+  STATE_LABEL,
+  STATE_SUBLABEL,
   stateOf,
 } from "../core/skills.js";
 import {
@@ -18,20 +19,11 @@ import {
   setSkillState,
   setToolEnabled,
 } from "../core/toggles.js";
-import { SCOPE_HEADING, type ToolInfo, listTools } from "../core/tools.js";
-import {
-  type SkillUpdateCheck,
-  defaultExec,
-  listSkillUpdates,
-} from "../core/updates.js";
-import {
-  type UsageReport,
-  readFolderUsage,
-  readSessionUsage,
-} from "../core/usage.js";
+import { listTools, SCOPE_HEADING, type ToolInfo } from "../core/tools.js";
+import { defaultExec, listSkillUpdates, type SkillUpdateCheck } from "../core/updates.js";
+import { readFolderUsage, readSessionUsage, type UsageReport } from "../core/usage.js";
 import type { SkillOverrideState } from "../core/validate.js";
 import type { TransactionResult } from "../core/write.js";
-import { maskText } from "../core/mask.js";
 
 interface ManageProps {
   repo: RepoInfo;
@@ -141,13 +133,23 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
 
+  // `version` is deliberately listed: bumping it is how a write forces a re-read.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is a refresh key
   const tools = useMemo(() => listTools(repo), [repo, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is a refresh key
   const skills = useMemo(() => listSkills(repo), [repo, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is a refresh key
   const overrides = useMemo(() => readOverrides(repo), [repo, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is a refresh key
   const enabledPlugins = useMemo(() => readEnabledPlugins(repo), [repo, version]);
   // Only an explicit false is off; unlisted means never switched, so it's on.
   const pluginOff = useMemo(
-    () => new Set(Object.entries(enabledPlugins).filter(([, on]) => !on).map(([id]) => id)),
+    () =>
+      new Set(
+        Object.entries(enabledPlugins)
+          .filter(([, on]) => !on)
+          .map(([id]) => id),
+      ),
     [enabledPlugins],
   );
 
@@ -195,9 +197,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
   /** The handful worth naming; the long tail is noise on a narrow screen. */
   const topTools = useMemo(
     () =>
-      [...(usage?.folder.byTool ?? new Map())]
-        .sort((a, b) => b[1].calls - a[1].calls)
-        .slice(0, 6),
+      [...(usage?.folder.byTool ?? new Map())].sort((a, b) => b[1].calls - a[1].calls).slice(0, 6),
     [usage],
   );
 
@@ -267,29 +267,32 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         refresh();
       }
     }
-  }, [section, currentTool, currentSkill, currentState, repo, refresh]);
+  }, [section, currentTool, currentSkill, currentState, pluginOff, repo, refresh]);
 
   const currentUpdate = currentSkill ? updates.get(currentSkill.filePath) : undefined;
 
-  const runUpdate = useCallback(async (check: SkillUpdateCheck) => {
-    const command = check.command;
-    if (!command) return;
-    setRunning(true);
-    // argv as an array, never a shell line — a skill directory called
-    // `; rm -rf ~` has to stay a directory name.
-    const [file, ...args] = command.argv;
-    const result = await defaultExec(file as string, args, { timeoutMs: 120_000 });
-    setRunning(false);
-    setPending(null);
-    setRan(
-      result.ok
-        ? `Updated ${check.skill.name}.${command.needsRestart ? " Restart Claude Code to pick it up." : ""}`
-        : // Show what actually came back. A failed update that claims success
-          // is worse than no update button at all.
-          (result.stderr || result.stdout || "That didn't work.").trim(),
-    );
-    refresh();
-  }, [refresh]);
+  const runUpdate = useCallback(
+    async (check: SkillUpdateCheck) => {
+      const command = check.command;
+      if (!command) return;
+      setRunning(true);
+      // argv as an array, never a shell line — a skill directory called
+      // `; rm -rf ~` has to stay a directory name.
+      const [file, ...args] = command.argv;
+      const result = await defaultExec(file as string, args, { timeoutMs: 120_000 });
+      setRunning(false);
+      setPending(null);
+      setRan(
+        result.ok
+          ? `Updated ${check.skill.name}.${command.needsRestart ? " Restart Claude Code to pick it up." : ""}`
+          : // Show what actually came back. A failed update that claims success
+            // is worse than no update button at all.
+            (result.stderr || result.stdout || "That didn't work.").trim(),
+      );
+      refresh();
+    },
+    [refresh],
+  );
 
   useInput((input, key) => {
     // While a preview is up it owns the keyboard, so Space can't toggle
@@ -306,6 +309,11 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
 
     if (key.escape || input === "q") {
       onBack();
+      return;
+    }
+    // The empty screen's footer offers Enter as the way to go find something.
+    if (key.return && tools.length === 0 && skills.length === 0) {
+      onOpenKits();
       return;
     }
     if (key.leftArrow || key.rightArrow) {
@@ -338,7 +346,12 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
             <Text dimColor>Press Enter to see what you can set up in one step.</Text>
           </Box>
         </Box>
-        <Footer hints={[{ key: "Enter", label: "see what's available" }, { key: "Esc", label: "back" }]} />
+        <Footer
+          hints={[
+            { key: "Enter", label: "see what's available" },
+            { key: "Esc", label: "back" },
+          ]}
+        />
       </Box>
     );
   }

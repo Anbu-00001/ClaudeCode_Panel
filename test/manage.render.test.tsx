@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { render } from "ink-testing-library";
-import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolvePaths } from "../src/core/paths.js";
 import { Manage } from "../src/screens/Manage.js";
@@ -82,12 +81,7 @@ describe("the manage screen, rendered", () => {
 
   /** Writes a transcript where `calls` tool_use blocks name `tool`. */
   function writeTranscript(sessionId: string, entries: Array<[string, number]>) {
-    const dir = path.join(
-      fakeHome,
-      ".claude",
-      "projects",
-      repoDir.replace(/[^a-zA-Z0-9]/g, "-"),
-    );
+    const dir = path.join(fakeHome, ".claude", "projects", repoDir.replace(/[^a-zA-Z0-9]/g, "-"));
     fs.mkdirSync(dir, { recursive: true });
     const lines: string[] = [];
     for (const [tool, calls] of entries) {
@@ -187,7 +181,22 @@ describe("the manage screen, rendered", () => {
     await settle();
 
     const frame = lastFrame() ?? "";
-    expect(frame.toLowerCase()).toContain("nothing on this computer records where this skill came from");
+    expect(frame.toLowerCase()).toContain(
+      "nothing on this computer records where this skill came from",
+    );
+    unmount();
+  });
+
+  it("opens the kits when Enter is pressed on the empty screen, as its footer says", async () => {
+    const onOpenKits = vi.fn();
+    const { lastFrame, stdin, unmount } = render(
+      <Manage repo={resolvePaths(repoDir)} onOpenKits={onOpenKits} onBack={() => {}} />,
+    );
+    await settle();
+    expect(lastFrame()).toContain("see what's available");
+    stdin.write("\r");
+    await settle();
+    expect(onOpenKits).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
