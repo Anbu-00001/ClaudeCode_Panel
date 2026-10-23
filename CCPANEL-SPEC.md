@@ -245,6 +245,14 @@ Claude Code never reads.
 but never writes it.** To add a user-scope MCP server, shell out to `claude mcp add -s user`
 instead.
 
+> **One recorded exception (decided after v1 shipped).** The Manage screen's switch for a server
+> from any scope writes `projects[<dir>].disabledMcpServers` in `~/.claude.json` — the same key
+> Claude Code's own `/mcp` menu writes (`setServerDenied` in `src/core/toggles.ts`). A permissions
+> deny rule (`mcp__<server>__*`) was considered and rejected: the server would still start, its
+> prompts and resources would stay, and `/mcp` would still show it as on — a half switch, which
+> §5.5 forbids. The write touches only that one key, goes through the full §12.1 protocol, and
+> refuses if the file changed while ccpanel was working on it. Nothing else may write this file.
+
 ### 5.2 Skills
 
 A skill is a directory containing `SKILL.md`: YAML frontmatter plus markdown. The directory
@@ -1108,7 +1116,7 @@ Done when all of these pass on Linux.
 | Kits feel patronising to experienced users | `--expert` flag skips explanations. Never nag. |
 | We duplicate `/doctor` | Don't. Point at it. |
 | MCP registry is in preview and may break | Timeout + graceful failure; the rest of the app works without it. |
-| Writing `~/.claude.json` corrupts an OAuth session | v1 never writes it. Don't add this without a redesign. |
+| Writing `~/.claude.json` corrupts an OAuth session | v1 never writes it, except the one guarded per-folder server switch recorded in §5.1. Don't add another without a redesign. |
 | The writing is mediocre | The single biggest failure mode. Test #20 is the gate. |
 
 ---

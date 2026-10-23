@@ -102,6 +102,16 @@ export function setToolEnabled(
  * ~/.claude.json is Claude Code's own live state file, so this is the one
  * write that can collide with a running session. write.ts checks the file
  * hasn't moved under us and refuses rather than clobbering it.
+ *
+ * This is a deliberate exception to the spec's "never write ~/.claude.json"
+ * (§5.1), recorded there. The alternative considered was a permissions deny
+ * rule, `mcp__<server>__*`, in settings.local.json. It is not equivalent: the
+ * server still starts (with whatever side effects and sign-in prompts it
+ * has), its prompts and resources stay available, and Claude Code's own /mcp
+ * menu still shows it as on, so the two switches would disagree. A switch
+ * that only half turns something off is the "fake switch" §5.5 forbids, so
+ * the real one is used, with the write guarded by the same read-check-rename
+ * protocol as every other file and only one key under this folder touched.
  */
 export function setServerDenied(
   repo: RepoInfo,
