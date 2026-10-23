@@ -125,6 +125,58 @@ describe("safe-permissions", () => {
   });
 });
 
+/**
+ * Claude Code's rule matching for Bash: `*` stands for any run of characters,
+ * spaces included. Good enough to check which rule a command falls under.
+ */
+function ruleMatches(rule: string, command: string): boolean {
+  const inner = /^Bash\((.*)\)$/.exec(rule)?.[1];
+  if (inner === undefined) return false;
+  const pattern = inner.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`^${pattern.join(".*")}$`).test(command);
+}
+
+describe("git look-only permissions can't write files or read outside the project", () => {
+  for (const id of ["safe-permissions", "code-reviewer", "commit-messages"]) {
+    it(`${id}: asks before git output goes to a file or reads files elsewhere`, () => {
+      installKit(kit(id), repo(), appendUndoEntry);
+      const file = path.join(repoDir, ".claude", "settings.local.json");
+      const perms = JSON.parse(fs.readFileSync(file, "utf8")).permissions as {
+        allow: string[];
+        ask: string[];
+      };
+      const asked = (cmd: string) => perms.ask.some((r) => ruleMatches(r, cmd));
+      const allowed = (cmd: string) => perms.allow.some((r) => ruleMatches(r, cmd));
+
+      for (const cmd of [
+        "git diff --output=/home/me/.bashrc",
+        "git diff HEAD --output /tmp/x",
+        "git diff --no-index /dev/null /home/me/.ssh/id_rsa",
+        "git diff /dev/null /home/me/.ssh/id_rsa",
+        "git diff ~/.ssh/id_rsa /dev/null",
+        "git diff --stat ../other-project/.env x",
+        'git diff "$HOME/.ssh/id_rsa" a',
+        "git log -p --output=notes.txt",
+      ]) {
+        expect(asked(cmd), cmd).toBe(true);
+      }
+      // Everyday use still goes straight through.
+      for (const cmd of [
+        "git diff --stat",
+        "git diff HEAD~1 -- src/app.ts",
+        "git diff main..feature",
+        "git log --oneline -5",
+      ]) {
+        expect(allowed(cmd) && !asked(cmd), cmd).toBe(true);
+      }
+
+      uninstallKit(kit(id), repo(), appendUndoEntry);
+      const after = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+      expect(after.permissions?.ask ?? []).toEqual([]);
+    });
+  }
+});
+
 describe("commit-messages", () => {
   it("installs an ability the model can't trigger on its own, since committing is a side effect", () => {
     installKit(kit("commit-messages"), repo(), appendUndoEntry);

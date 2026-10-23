@@ -8,11 +8,17 @@
   "installs": [
     { "kind": "skill", "name": "commit", "from": "skills/commit/SKILL.md", "to": ".claude/skills/commit/SKILL.md" },
     { "kind": "settings", "scope": "local",
-      "patch": { "permissions": { "allow": ["Bash(git diff *)", "Bash(git status *)", "Bash(git log *)"] } } }
+      "patch": { "permissions": {
+        "allow": ["Bash(git diff *)", "Bash(git status *)", "Bash(git log *)"],
+        "ask": [
+          "Bash(git diff *--output*)", "Bash(git diff *--no-index*)",
+        "Bash(git diff /*)", "Bash(git diff * /*)", "Bash(git diff ~*)", "Bash(git diff * ~*)",
+        "Bash(git diff *../*)", "Bash(git diff *$*)", "Bash(git log *--output*)"
+        ] } } }
   ],
   "tryThis": "/commit",
   "tryThisExplain": "Stage some changes with git add, then type this in Claude Code.",
   "explain": "Claude reads the changes you have staged and writes the message for you, describing what changed and why rather than repeating the file names. It shows you the message first — nothing is committed until you say so.",
-  "honestLimit": "It can only describe what it can see in the change. If the reason lives in a ticket or a conversation, you still need to add that yourself.",
+  "honestLimit": "It can only describe what it can see in the change. If the reason lives in a ticket or a conversation, you still need to add that yourself. Claude may look at your changes and history without asking, but still asks if it tries to save that output to a file or compare files outside your project.",
   "uninstallNote": null
 }

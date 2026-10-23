@@ -12,11 +12,15 @@
         "Bash(git show *)", "Bash(ls *)",
         "Bash(wc *)", "Bash(pwd)", "Bash(which *)", "Bash(file *)", "Bash(du *)",
         "Bash(node --version)", "Bash(npm --version)", "Bash(python3 --version)"
+      ], "ask": [
+        "Bash(git diff *--output*)", "Bash(git diff *--no-index*)",
+        "Bash(git diff /*)", "Bash(git diff * /*)", "Bash(git diff ~*)", "Bash(git diff * ~*)",
+        "Bash(git diff *../*)", "Bash(git diff *$*)", "Bash(git log *--output*)", "Bash(git show *--output*)"
       ] } } }
   ],
   "tryThis": "What changed in this project recently?",
   "tryThisExplain": "Ask Claude that. It should look through your history without stopping to ask.",
   "explain": "Claude asks before running commands on your computer. Most of those commands only look at things and change nothing, so being asked about them is just noise. This tells Claude that a specific list of look-only commands is fine to run, and leaves everything that changes or deletes anything still needing your say-so.",
-  "honestLimit": "Only look-only commands are allowed through. Printing a file's contents isn't one of them, since that could be your keys or passwords, so Claude still asks before cat, head or tail. Anything that writes, deletes, installs, or sends still stops and asks you.",
+  "honestLimit": "Only look-only commands are allowed through. Printing a file's contents isn't one of them, since that could be your keys or passwords, so Claude still asks before cat, head or tail. Git's compare and history commands can be told to write their output to a file, or to compare files outside your project, so Claude still asks when it uses them that way. The checks go by the words in the command, so a cleverly written command could slip past them. Anything that writes, deletes, installs, or sends still stops and asks you.",
   "uninstallNote": null
 }
