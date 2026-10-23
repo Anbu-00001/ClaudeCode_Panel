@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
+import { atomicWriteFile, ccpanelHome, ensureDir } from "./write.js";
 
 const run = promisify(execFile);
 
@@ -126,6 +129,36 @@ export function ccusageArgv(period: Period): string[] {
   return ["npx", "-y", `ccusage@${CCUSAGE_VERSION}`, period, "--json"];
 }
 
+/**
+ * Where npx runs from, and with which npm settings.
+ *
+ * npx looks in the current folder first: a project that ships its own
+ * node_modules/ccusage (or a .npmrc pointing at another registry) would have
+ * that code run the moment Spending opens, if we ran npx from the project.
+ * So it runs from a folder ccpanel owns, with the public registry named
+ * outright and an empty user config, so neither the project's nor a stray
+ * npm setting can swap in a different package.
+ */
+export function ccusageRunDir(): string {
+  return path.join(ccpanelHome(), "run");
+}
+
+export function ccusageRunOptions(): { cwd: string; env: NodeJS.ProcessEnv } {
+  const dir = ccusageRunDir();
+  ensureDir(dir);
+  const emptyNpmrc = path.join(dir, "empty.npmrc");
+  if (!fs.existsSync(emptyNpmrc)) atomicWriteFile(emptyNpmrc, "");
+  // Any npm_config_* the parent shell set is dropped too: those win over
+  // every config file, so leaving them would undo the two lines below.
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!/^npm_config_/i.test(key)) env[key] = value;
+  }
+  env["npm_config_registry"] = "https://registry.npmjs.org/";
+  env["npm_config_userconfig"] = emptyNpmrc;
+  return { cwd: dir, env };
+}
+
 export async function getUsage(period: Period, now = Date.now()): Promise<UsageOutcome> {
   const hit = cache.get(period);
   if (hit && now - hit.at < CACHE_MS) return hit.outcome;
@@ -134,6 +167,7 @@ export async function getUsage(period: Period, now = Date.now()): Promise<UsageO
   try {
     const [file, ...args] = ccusageArgv(period);
     const { stdout } = await run(file as string, args, {
+      ...ccusageRunOptions(),
       timeout: 90_000,
       maxBuffer: 32 * 1024 * 1024,
       encoding: "utf8",
