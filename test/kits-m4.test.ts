@@ -9,6 +9,7 @@ import {
   installKit,
   isKitInstalled,
   KIT_ORDER,
+  kitHasUpdate,
   loadKits,
   previewKit,
   uninstallKit,
@@ -284,5 +285,62 @@ describe("uninstall takes out only what the kit itself added", () => {
     expect(result.keptFiles).toEqual([agent]);
     expect(fs.readFileSync(agent, "utf8")).toContain("My own extra rule.");
     expect(fs.existsSync(skill)).toBe(false);
+  });
+});
+
+describe("updating a kit to a newer version", () => {
+  /** A private copy of a bundled kit, so a test can ship a "new version" of it. */
+  function copyOfKit(id: string) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-kitcopy-"));
+    fs.cpSync(path.join(KITS, id), path.join(dir, id), { recursive: true });
+    return { dir, kit: () => getKit(id, dir)! };
+  }
+  const agentPath = () => path.join(repoDir, ".claude", "agents", "reviewer.md");
+
+  it("replaces and removes the older copy ccpanel wrote, instead of calling it the user's", () => {
+    const { dir, kit: k } = copyOfKit("code-reviewer");
+    expect(installKit(k(), repo(), appendUndoEntry).ok).toBe(true);
+
+    // The kit ships a new version of the file.
+    fs.appendFileSync(path.join(dir, "code-reviewer", "agents", "reviewer.md"), "\nNew rule.\n");
+    expect(kitHasUpdate(k(), repo())).toBe(true);
+    const preview = previewKit(k(), repo());
+    expect(preview.conflicts).toHaveLength(0);
+    expect(preview.lines.some((l) => l.note?.includes("latest version"))).toBe(true);
+
+    expect(installKit(k(), repo(), appendUndoEntry).ok).toBe(true);
+    expect(fs.readFileSync(agentPath(), "utf8")).toContain("New rule.");
+    expect(kitHasUpdate(k(), repo())).toBe(false);
+
+    // And an older copy is removed on uninstall, not kept as "edited".
+    fs.appendFileSync(path.join(dir, "code-reviewer", "agents", "reviewer.md"), "Newer still.\n");
+    const result = uninstallKit(k(), repo(), appendUndoEntry);
+    expect(result.keptFiles).toEqual([]);
+    expect(fs.existsSync(agentPath())).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("still keeps, and still won't overwrite, a file the user edited", () => {
+    const { dir, kit: k } = copyOfKit("code-reviewer");
+    installKit(k(), repo(), appendUndoEntry);
+    fs.appendFileSync(agentPath(), "my own note\n");
+    fs.appendFileSync(path.join(dir, "code-reviewer", "agents", "reviewer.md"), "\nNew rule.\n");
+
+    expect(kitHasUpdate(k(), repo())).toBe(false);
+    expect(previewKit(k(), repo()).conflicts).toHaveLength(1);
+    expect(uninstallKit(k(), repo(), appendUndoEntry).keptFiles).toEqual([agentPath()]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("counts a CLAUDE.md section that is already there as done, not a conflict", () => {
+    const claudeMd = path.join(repoDir, "CLAUDE.md");
+    expect(installKit(kit("scope-guard"), repo(), appendUndoEntry).ok).toBe(true);
+    const once = fs.readFileSync(claudeMd, "utf8");
+    fs.rmSync(path.join(repoDir, ".claude"), { recursive: true, force: true });
+
+    const preview = previewKit(kit("scope-guard"), repo());
+    expect(preview.lines.some((l) => l.note?.includes("already has this section"))).toBe(true);
+    expect(installKit(kit("scope-guard"), repo(), appendUndoEntry).ok).toBe(true);
+    expect(fs.readFileSync(claudeMd, "utf8")).toBe(once);
   });
 });

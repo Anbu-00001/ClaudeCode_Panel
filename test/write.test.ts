@@ -388,18 +388,20 @@ describe("fenced CLAUDE.md blocks (§9.2)", () => {
     expect(fs.readFileSync(claudeMd, "utf8")).toContain("# Existing");
   });
 
-  it("refuses to append the same block twice", () => {
+  it("treats a block that is already there as done, never appending it twice", () => {
     const claudeMd = path.join(workDir, "CLAUDE.md");
     runTransaction(
       [{ kind: "appendBlock", filePath: claudeMd, blockId: "kit", content: "one" }],
       meta,
     );
+    const before = fs.readFileSync(claudeMd, "utf8");
     const second = runTransaction(
       [{ kind: "appendBlock", filePath: claudeMd, blockId: "kit", content: "two" }],
       meta,
     );
-    expect(second.ok).toBe(false);
-    expect(second.failure?.reason).toBe("conflict");
+    expect(second.ok).toBe(true);
+    // Left exactly as it was: the user may have edited the text inside.
+    expect(fs.readFileSync(claudeMd, "utf8")).toBe(before);
   });
 });
 

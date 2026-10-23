@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,7 @@ import {
   ccpanelHome,
   DEFAULT_CONTENT_MODE,
   EXECUTABLE_MODE,
+  findFencedBlock,
   isExecutable,
   type Operation,
   type RecordedChange,
@@ -321,11 +323,19 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
     }
 
     if (entry.kind === "claudemd") {
+      let present = false;
+      try {
+        present = findFencedBlock(fs.readFileSync(absolutePath, "utf8"), entry.blockId) !== null;
+      } catch {
+        present = false;
+      }
       lines.push({
         op: "append",
         displayPath,
         absolutePath,
-        note: "adds a section, leaving everything already there alone",
+        note: present
+          ? "already has this section, so it's left as it is"
+          : "adds a section, leaving everything already there alone",
         conflict: false,
       });
       files.push({ displayPath, contents: entry.content });
@@ -363,9 +373,14 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
       continue;
     }
 
+    const olderCopy = isOlderKitCopy(kit, entry.from, absolutePath);
     let conflict = false;
     try {
-      if (fs.existsSync(absolutePath) && fs.readFileSync(absolutePath, "utf8") !== contents) {
+      if (
+        !olderCopy &&
+        fs.existsSync(absolutePath) &&
+        fs.readFileSync(absolutePath, "utf8") !== contents
+      ) {
         conflict = true;
       }
     } catch {
@@ -373,10 +388,14 @@ export function previewKit(kit: Kit, repo: RepoInfo): KitPreview {
     }
 
     lines.push({
-      op: "create",
+      op: olderCopy ? "change" : "create",
       displayPath,
       absolutePath,
-      note: entry.kind === "hook" ? "runs automatically before Claude uses a tool" : null,
+      note: olderCopy
+        ? "updates the copy ccpanel put here before to the latest version"
+        : entry.kind === "hook"
+          ? "runs automatically before Claude uses a tool"
+          : null,
       conflict,
     });
     files.push({ displayPath, contents });
@@ -622,6 +641,8 @@ function buildOperations(
       filePath: absolutePath,
       contents: readKitFile(kit, entry.from),
       mode: executable ? EXECUTABLE_MODE : DEFAULT_CONTENT_MODE,
+      // An older copy ccpanel wrote is replaced; anything else is a conflict.
+      overwrite: isOlderKitCopy(kit, entry.from, absolutePath),
     });
   }
 
@@ -716,7 +737,11 @@ function extractCommand(entry: unknown): string | null {
   return null;
 }
 
-/** True when the file at `target` no longer matches what the kit shipped. */
+/**
+ * True when the file at `target` is no longer what ccpanel put there: it
+ * matches neither what the kit ships now nor what ccpanel recorded writing
+ * (an older version of the kit, which an update may replace).
+ */
 function userEditedKitFile(kit: Kit, from: string, target: string): boolean {
   let current: string;
   try {
@@ -724,11 +749,81 @@ function userEditedKitFile(kit: Kit, from: string, target: string): boolean {
   } catch {
     return false; // already gone: nothing to protect
   }
+  if (isRecordedKitFile(target, current)) return false;
   try {
     return current !== readKitFile(kit, from);
   } catch {
     return true; // can't compare against the original, so don't risk it
   }
+}
+
+// ---------------------------------------------------------------------------
+// Which kit files ccpanel wrote
+//
+// Comparing a file on disk with what the kit ships now can't tell an older
+// version of the kit from a file the user edited, so updating a kit used to
+// be impossible: the old copy was "edited", kept on uninstall and a conflict
+// on install. Install now records a hash of each file it writes; a file
+// that still has that hash is the kit's own, to replace or remove.
+// ---------------------------------------------------------------------------
+
+/** Installed file path → sha256 of the contents ccpanel wrote there. */
+type FileLedger = Record<string, string>;
+
+export function fileLedgerPath(): string {
+  return path.join(ccpanelHome(), "kit-files.json");
+}
+
+function readFileLedger(): FileLedger {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(fileLedgerPath(), "utf8"));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as FileLedger)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeFileLedger(ledger: FileLedger): void {
+  atomicWriteFile(fileLedgerPath(), serializeJson(ledger));
+}
+
+function sha256(text: string): string {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+/** True when `contents` is exactly what ccpanel last recorded writing at `target`. */
+function isRecordedKitFile(target: string, contents: string): boolean {
+  return readFileLedger()[target] === sha256(contents);
+}
+
+/** What sits at `target` now, when it is an earlier copy ccpanel wrote of a kit file. */
+function isOlderKitCopy(kit: Kit, from: string, target: string): boolean {
+  try {
+    const current = fs.readFileSync(target, "utf8");
+    return current !== readKitFile(kit, from) && isRecordedKitFile(target, current);
+  } catch {
+    return false;
+  }
+}
+
+/** File entries of a kit: everything that isn't a settings, CLAUDE.md or tool change. */
+function fileEntriesOf(kit: Kit) {
+  return kit.installs.filter(
+    (e): e is Extract<InstallEntry, { from: string }> =>
+      e.kind !== "settings" && e.kind !== "claudemd" && e.kind !== "mcp",
+  );
+}
+
+/**
+ * True when the kit is installed but at least one of its files is an older
+ * copy ccpanel wrote, so setting it up again would bring it up to date.
+ */
+export function kitHasUpdate(kit: Kit, repo: RepoInfo): boolean {
+  return fileEntriesOf(kit).some((entry) =>
+    isOlderKitCopy(kit, entry.from, targetPathFor(kit, entry, repo)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -867,6 +962,19 @@ export function installKit(
     }
     writePermissionLedger(ledger);
   }
+  if (result.ok) {
+    const ledger = readFileLedger();
+    let changed = false;
+    for (const entry of fileEntriesOf(kit)) {
+      try {
+        ledger[targetPathFor(kit, entry, repo)] = sha256(readKitFile(kit, entry.from));
+        changed = true;
+      } catch {
+        /* a missing kit file failed the install already */
+      }
+    }
+    if (changed) writeFileLedger(ledger);
+  }
   if (result.ok && mcp.written.length > 0) {
     const ledger = readMcpLedger();
     for (const { file, name } of mcp.written) {
@@ -917,6 +1025,17 @@ export function uninstallKit(
       ledger[file] = byKit;
     }
     writePermissionLedger(ledger);
+  }
+  if (result.ok) {
+    const ledger = readFileLedger();
+    let changed = false;
+    for (const entry of fileEntriesOf(kit)) {
+      const file = targetPathFor(kit, entry, repo);
+      if (files.kept.includes(file) || ledger[file] === undefined) continue;
+      delete ledger[file];
+      changed = true;
+    }
+    if (changed) writeFileLedger(ledger);
   }
   if (result.ok) {
     let changed = false;

@@ -9,6 +9,7 @@ import {
   installKit,
   isKitInstalled,
   type Kit,
+  kitHasUpdate,
   postInstallCheck,
   previewKit,
   uninstallKit,
@@ -34,6 +35,11 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const [keptFiles, setKeptFiles] = useState<string[]>([]);
 
   const preview = useMemo(() => previewKit(kit, repo), [kit, repo]);
+  // A newer version of the kit than the copy ccpanel put here earlier.
+  const hasUpdate = useMemo(
+    () => alreadyInstalled && kitHasUpdate(kit, repo),
+    [alreadyInstalled, kit, repo],
+  );
 
   useInput((input, key) => {
     if (key.escape) {
@@ -73,6 +79,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   const actions: ListItem[] = alreadyInstalled
     ? [
         { key: "keep", label: "Keep it" },
+        ...(hasUpdate ? [{ key: "install", label: "Update it to the latest version" }] : []),
         { key: "files", label: "Show me the files" },
         { key: "uninstall", label: "Remove it" },
       ]

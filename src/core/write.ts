@@ -604,13 +604,19 @@ function applyOperation(
     case "appendBlock": {
       const existed = fs.existsSync(op.filePath);
       const existing = existed ? fs.readFileSync(op.filePath, "utf8") : "";
+      // The block is already there (set up before, or from a copy of this
+      // project): that's the outcome asked for, so it's done, not a conflict.
+      // Its text is left alone in case the user has edited it. Nothing is
+      // written, so there is nothing to back up or undo.
       if (findFencedBlock(existing, op.blockId)) {
         return {
-          ok: false,
-          failure: {
-            reason: "conflict",
-            filePath: op.filePath,
-            message: "This block is already in the file.",
+          ok: true,
+          change: {
+            file: op.filePath,
+            op: "append-block",
+            key: op.blockId,
+            backupPath: null,
+            existedBefore: true,
           },
         };
       }
