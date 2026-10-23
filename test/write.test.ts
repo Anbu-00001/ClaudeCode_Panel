@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { validateByFilename, validateClaudeJson, validateSettings } from "../src/core/validate.js";
 import {
   atomicWriteFile,
+  BACKUP_KEEP_PER_FILE,
+  BACKUP_MAX_AGE_MS,
+  backupKey,
+  backupsDir,
   findFencedBlock,
   type Operation,
   runTransaction,
@@ -365,6 +369,41 @@ describe("snapshots", () => {
 
   it("returns null when there is nothing to snapshot", () => {
     expect(snapshot(path.join(workDir, "nope.json"))).toBeNull();
+  });
+
+  it("names each backup after the file's full path, not just its name", () => {
+    const a = path.join(workDir, "a", "settings.json");
+    const b = path.join(workDir, "b", "settings.json");
+    for (const f of [a, b]) {
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, "{}\n");
+    }
+    expect(backupKey(a)).not.toBe(backupKey(b));
+    expect(path.basename(snapshot(a) as string)).toContain(backupKey(a));
+  });
+
+  it("keeps only the newest copies of one file", () => {
+    const target = path.join(workDir, "settings.json");
+    fs.writeFileSync(target, "{}\n");
+    for (let i = 0; i < BACKUP_KEEP_PER_FILE + 5; i++) snapshot(target);
+
+    const mine = fs.readdirSync(backupsDir()).filter((n) => n.endsWith(backupKey(target)));
+    expect(mine).toHaveLength(BACKUP_KEEP_PER_FILE);
+  });
+
+  it("drops backups older than the age limit, whatever file they came from", () => {
+    fs.mkdirSync(backupsDir(), { recursive: true });
+    const ancient = path.join(backupsDir(), "2020-01-01T00:00:00.000Z-other.json");
+    fs.writeFileSync(ancient, "{}");
+    const old = new Date(Date.now() - BACKUP_MAX_AGE_MS - 60_000);
+    fs.utimesSync(ancient, old, old);
+
+    const target = path.join(workDir, "settings.json");
+    fs.writeFileSync(target, "{}\n");
+    const fresh = snapshot(target) as string;
+
+    expect(fs.existsSync(ancient)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
   });
 });
 

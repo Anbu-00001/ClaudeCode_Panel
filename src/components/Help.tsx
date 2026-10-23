@@ -1,34 +1,47 @@
 import { Box, Text } from "ink";
 
 /**
- * The whole key vocabulary (§8.1). Shown on `?` from anywhere. No vim keys —
- * our reader doesn't know them and they'd clutter the footer.
+ * The whole key vocabulary (§8.1). Shown on `?` from the home screen. No vim
+ * keys — our reader doesn't know them and they'd clutter the footer.
+ *
+ * Every key listed here must do what it says on the screen it names: this
+ * list once promised `u` for undo, when on the one screen that reads `u` it
+ * starts an update.
  */
 export function Help() {
-  const keys: Array<[string, string]> = [
+  const everywhere: Array<[string, string]> = [
     ["↑ ↓", "move"],
-    ["← →", "switch between the two lists"],
     ["Enter", "do the thing under the cursor"],
-    ["Space", "flip a switch (on the Manage screen)"],
-    ["/", "search this list"],
-    ["u", "undo the last change"],
-    ["?", "show or hide this"],
     ["Esc", "go back"],
-    ["q", "quit"],
+    ["q", "quit (here); go back (anywhere else)"],
+    ["?", "show or hide this"],
   ];
+  const someScreens: Array<[string, string]> = [
+    ["← →", "Manage: switch between the two lists · Spending: change the time span"],
+    ["Space", "Manage: flip a switch"],
+    ["u", "Manage: update the highlighted skill (you see the command first)"],
+    ["/", "Commands: search the list"],
+  ];
+
+  const rows = (keys: Array<[string, string]>) =>
+    keys.map(([key, what]) => (
+      <Box key={key}>
+        <Box width={9} flexShrink={0}>
+          <Text bold>{key}</Text>
+        </Box>
+        <Text>{what}</Text>
+      </Box>
+    ));
 
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>Keys</Text>
       <Box marginTop={1} flexDirection="column">
-        {keys.map(([key, what]) => (
-          <Box key={key}>
-            <Box width={9}>
-              <Text bold>{key}</Text>
-            </Box>
-            <Text>{what}</Text>
-          </Box>
-        ))}
+        {rows(everywhere)}
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor>On some screens</Text>
+        {rows(someScreens)}
       </Box>
       <Box marginTop={1}>
         <Text dimColor>
@@ -51,7 +64,7 @@ export function FirstRun({ projectName }: { projectName: string }) {
       <Box marginTop={1} flexDirection="column">
         <Text>
           Pick something below and press Enter. You'll see exactly what it will change before
-          anything happens, and you can undo it afterwards.
+          anything happens, and you can remove it again from the same screen.
         </Text>
         <Box marginTop={1}>
           <Text dimColor>

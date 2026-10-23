@@ -214,6 +214,67 @@ export function isExecutable(filePath: string): boolean {
 // Backups (§12.1.3)
 // ---------------------------------------------------------------------------
 
+/** Backups older than this are deleted the next time ccpanel takes one. */
+export const BACKUP_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** And at most this many are kept for any one file. */
+export const BACKUP_KEEP_PER_FILE = 20;
+
+/**
+ * The part of a backup's name that says which file it is a copy of. The base
+ * name alone isn't enough: every project has a `.claude/settings.json`, and
+ * restoring one project's copy into another would be worse than no backup.
+ * So it carries a short hash of the full path too.
+ */
+export function backupKey(filePath: string): string {
+  const hash = crypto.createHash("sha256").update(path.resolve(filePath)).digest("hex").slice(0, 8);
+  return `${hash}-${path.basename(filePath)}`;
+}
+
+/**
+ * Keeps the backups folder from growing forever: anything older than
+ * BACKUP_MAX_AGE_MS goes, and for the file just backed up only the newest
+ * BACKUP_KEEP_PER_FILE copies stay. Best-effort — a backup that couldn't be
+ * pruned is never a reason to fail the write that made it.
+ */
+export function pruneBackups(key: string, now: number = Date.now()): string[] {
+  const dir = backupsDir();
+  const removed: string[] = [];
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return removed;
+  }
+
+  const mine: Array<{ full: string; mtime: number }> = [];
+  for (const name of names) {
+    const full = path.join(dir, name);
+    let mtime: number;
+    try {
+      mtime = fs.statSync(full).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (now - mtime > BACKUP_MAX_AGE_MS) {
+      try {
+        removeFile(full);
+        removed.push(full);
+      } catch {}
+      continue;
+    }
+    if (name.endsWith(`-${key}`)) mine.push({ full, mtime });
+  }
+
+  mine.sort((a, b) => b.mtime - a.mtime || b.full.localeCompare(a.full));
+  for (const old of mine.slice(BACKUP_KEEP_PER_FILE)) {
+    try {
+      removeFile(old.full);
+      removed.push(old.full);
+    } catch {}
+  }
+  return removed;
+}
+
 /** Snapshots raw bytes. Returns null when there was no file to snapshot. */
 export function snapshot(filePath: string): string | null {
   let raw: Buffer;
@@ -228,17 +289,18 @@ export function snapshot(filePath: string): string | null {
   ensureDir(dir);
 
   const stamp = new Date().toISOString();
-  const base = path.basename(filePath);
-  let target = path.join(dir, `${stamp}-${base}`);
+  const key = backupKey(filePath);
+  let target = path.join(dir, `${stamp}-${key}`);
   let n = 1;
   while (fs.existsSync(target)) {
-    target = path.join(dir, `${stamp}-${n}-${base}`);
+    target = path.join(dir, `${stamp}-${n}-${key}`);
     n += 1;
   }
 
   // 0600: a snapshot of a secrets-bearing config is just as sensitive.
   fs.writeFileSync(target, raw, { mode: DEFAULT_FILE_MODE });
   fs.chmodSync(target, DEFAULT_FILE_MODE);
+  pruneBackups(key);
   return target;
 }
 

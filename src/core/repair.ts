@@ -5,6 +5,7 @@ import { type ClaudePaths, getClaudePaths, type RepoInfo } from "./paths.js";
 import { validateByFilename } from "./validate.js";
 import {
   atomicWriteFile,
+  backupKey,
   backupsDir,
   describeParseError,
   snapshot,
@@ -124,8 +125,13 @@ function parseClaudeCodeStamp(name: string): Date | null {
   return Number.isFinite(ms) ? new Date(ms) : null;
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function parseCcpanelStamp(name: string): Date | null {
-  // Ours: `<iso8601>-<basename>`.
+  // Ours: `<iso8601>-<path hash>-<basename>`, or `<iso8601>-<basename>` from
+  // before the hash was added.
   const match = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)-/.exec(name);
   if (!match?.[1]) return null;
   const d = new Date(match[1]);
@@ -147,8 +153,15 @@ export function findRestoreCandidates(filePath: string): RestoreCandidate[] {
   } catch {
     ourEntries = [];
   }
+  // Only copies of *this* file: the path hash tells one project's
+  // settings.json from another's. Older backups have no hash, so for those
+  // the base name is all there is to go on.
+  const key = backupKey(filePath);
+  const legacy = new RegExp(
+    `^\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z(?:-\\d{1,3})?-${escapeRegExp(target)}$`,
+  );
   for (const name of ourEntries) {
-    if (!name.endsWith(`-${target}`)) continue;
+    if (!name.endsWith(`-${key}`) && !legacy.test(name)) continue;
     const full = path.join(ours, name);
     try {
       out.push({

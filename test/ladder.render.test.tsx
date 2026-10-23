@@ -86,3 +86,17 @@ describe("Ladder screen", () => {
     }
   });
 });
+
+describe("the key list", () => {
+  it("only lists keys that do what it says, on the screen it names", async () => {
+    const { lastFrame, stdin, unmount } = renderLadder([]);
+    stdin.write("?");
+    await new Promise((r) => setTimeout(r, 30));
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Keys");
+    // `u` starts an update on Manage; it was once listed as "undo".
+    expect(frame).not.toMatch(/undo/i);
+    expect(frame).toMatch(/u\s+Manage: update/);
+    unmount();
+  });
+});

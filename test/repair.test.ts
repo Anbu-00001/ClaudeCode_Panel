@@ -104,6 +104,27 @@ describe("restore candidates", () => {
     expect(JSON.parse(fs.readFileSync(candidates[0]!.backupPath, "utf8"))).toEqual({ v: 2 });
   });
 
+  it("never offers another project's copy of a file with the same name", () => {
+    const mine = path.join(workDir, "mine", "settings.json");
+    const theirs = path.join(workDir, "theirs", "settings.json");
+    for (const f of [mine, theirs]) {
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, serializeJson({ who: f }));
+    }
+    snapshot(theirs);
+    expect(findRestoreCandidates(mine)).toHaveLength(0);
+    snapshot(mine);
+    expect(findRestoreCandidates(mine)).toHaveLength(1);
+  });
+
+  it("still finds backups taken before names carried the path", () => {
+    const target = path.join(workDir, "settings.json");
+    const dir = path.join(fakeHome, ".claude", "ccpanel", "backups");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${new Date().toISOString()}-settings.json`), "{}");
+    expect(findRestoreCandidates(target)).toHaveLength(1);
+  });
+
   it("finds Claude Code's own rotating backups by their unix-ms naming", () => {
     const ccBackups = path.join(fakeHome, ".claude", "backups");
     fs.mkdirSync(ccBackups, { recursive: true });

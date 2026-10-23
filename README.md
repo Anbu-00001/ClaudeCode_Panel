@@ -37,7 +37,8 @@ using:
 
 **Kits** — a kit is a small bundle that sets up one useful thing end to end: files, settings, and
 something to try, installed together by pressing Enter. You see every file that will be created and
-every setting that will change *before* anything happens, and one keypress undoes it.
+every setting that will change *before* anything happens, and removing it again is one choice on
+the same screen.
 
 ## The kits
 
