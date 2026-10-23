@@ -214,7 +214,8 @@ describe("the kit Claude asked for", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("reports type errors for the edited file only, matched by its full path", () => {
+  /** A small TypeScript project wired to this repo's tsc, and a hook runner for it. */
+  function tsProject() {
     const hookPath = path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-omts-"));
     const cache = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-omtmp-"));
@@ -240,17 +241,52 @@ describe("the kit Claude asked for", () => {
           tool_input: { file_path: path.join(tmp, f) },
         }),
         encoding: "utf8",
-        env: { ...process.env, TMPDIR: cache },
+        env: { ...process.env, XDG_CACHE_HOME: cache },
         timeout: 30_000,
       });
+    const cleanup = () => {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(cache, { recursive: true, force: true });
+    };
+    return { tmp, cache, run, cleanup };
+  }
 
+  it("reports type errors for the edited file only, matched by its full path", () => {
+    const { tmp, cache, run, cleanup } = tsProject();
     expect(run("src/a/index.ts")).toContain("src/a/index.ts(1,14)");
     expect(run("src/b/index.ts").trim()).toBe("");
-    // What tsc keeps between edits goes in the temp folder, never the project.
+    // What tsc keeps between edits goes in a private cache folder, never the project.
     expect(fs.readdirSync(tmp).sort()).toEqual(["node_modules", "src", "tsconfig.json"]);
-    expect(fs.readdirSync(cache).join(" ")).toMatch(/ccpanel-tsc-/);
-    fs.rmSync(tmp, { recursive: true, force: true });
-    fs.rmSync(cache, { recursive: true, force: true });
+    const dir = path.join(cache, "ccpanel", "tsc");
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    expect(fs.readdirSync(dir).join(" ")).toMatch(/\.tsbuildinfo$/);
+    cleanup();
+  }, 60_000);
+
+  it("won't keep its cache in a folder someone else could have planted", () => {
+    const { cache, run, cleanup } = tsProject();
+    // The cache folder is a symlink to somewhere else: tsc must not write there.
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-omelse-"));
+    fs.mkdirSync(path.join(cache, "ccpanel"));
+    fs.symlinkSync(elsewhere, path.join(cache, "ccpanel", "tsc"));
+    expect(run("src/a/index.ts")).toContain("src/a/index.ts(1,14)");
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+    fs.rmSync(elsewhere, { recursive: true, force: true });
+    cleanup();
+  }, 60_000);
+
+  it("won't write its cache through a symlinked cache file", () => {
+    const { cache, run, cleanup } = tsProject();
+    run("src/b/index.ts");
+    const dir = path.join(cache, "ccpanel", "tsc");
+    const [name] = fs.readdirSync(dir);
+    const victim = path.join(cache, "victim.txt");
+    fs.writeFileSync(victim, "keep me\n");
+    fs.rmSync(path.join(dir, name as string));
+    fs.symlinkSync(victim, path.join(dir, name as string));
+    expect(run("src/a/index.ts")).toContain("src/a/index.ts(1,14)");
+    expect(fs.readFileSync(victim, "utf8")).toBe("keep me\n");
+    cleanup();
   }, 60_000);
 
   it("never installs anything or guesses at a checker", () => {

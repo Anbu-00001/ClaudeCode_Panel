@@ -88,6 +88,28 @@ run_check() {
   bounded "$BUDGET" "$@" 2>&1
 }
 
+# A path for one cache file in a folder only this user can reach, or nothing
+# when that can't be made sure of. A fixed name in a shared folder like /tmp
+# lets anyone else on the machine create it first, or plant a symlink there,
+# so tsc would write wherever they chose. Without a safe place, the check
+# simply runs without its cache.
+private_cache_file() {
+  local base dir
+  base="${XDG_CACHE_HOME:-}"
+  [ -n "$base" ] || { [ -n "${HOME:-}" ] && base="$HOME/.cache"; }
+  [ -n "$base" ] || return 0
+  dir="$base/ccpanel/tsc"
+  mkdir -p "$dir" 2>/dev/null || true
+  [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ] || return 0
+  chmod 700 "$dir" 2>/dev/null || true
+  case "$(ls -ld "$dir" 2>/dev/null)" in
+    drwx------*) ;;
+    *) return 0 ;;
+  esac
+  [ -L "$dir/$1" ] && return 0
+  printf '%s' "$dir/$1"
+}
+
 CHECK_OUTPUT=""
 CHECK_NAME=""
 
@@ -99,9 +121,9 @@ case "$FILE" in
       # whole project. --incremental keeps what it learned between edits, in
       # a private folder outside the project (never a new file in the repo),
       # so only the first check after starting pays the full cost.
-      CACHE_DIR="${TMPDIR:-/tmp}/ccpanel-tsc-$(id -u 2>/dev/null || echo user)"
-      mkdir -p -m 700 "$CACHE_DIR" 2>/dev/null
-      BUILD_INFO="$CACHE_DIR/$(printf '%s' "$CWD" | cksum | cut -d' ' -f1).tsbuildinfo"
+      INCREMENTAL=""
+      BUILD_INFO=$(private_cache_file "$(printf '%s' "$CWD" | cksum | cut -d' ' -f1).tsbuildinfo")
+      [ -n "$BUILD_INFO" ] && INCREMENTAL=1
       # Errors are matched on the file's path from the project folder, the
       # way tsc prints it: two files can share a name (src/a/index.ts and
       # src/b/index.ts) and only the one just edited is Claude's to fix.
@@ -110,7 +132,7 @@ case "$FILE" in
         *) REL="$FILE" ;;
       esac
       CHECK_OUTPUT=$(cd "$CWD" && run_check ./node_modules/.bin/tsc --noEmit --pretty false \
-          --incremental --tsBuildInfoFile "$BUILD_INFO" -p tsconfig.json \
+          ${INCREMENTAL:+--incremental --tsBuildInfoFile "$BUILD_INFO"} -p tsconfig.json \
         | awk -v rel="$REL(" -v abs="$FILE(" 'index($0, rel) == 1 || index($0, abs) == 1' | head -12)
     fi
     ;;
