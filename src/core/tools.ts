@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { type RepoInfo, getClaudePaths } from "./paths.js";
+import { getClaudePaths, type RepoInfo } from "./paths.js";
 
 /**
  * Finding the tools (MCP servers) this project can reach, and being honest
@@ -41,7 +41,9 @@ export interface ToolInfo {
 function readJson(filePath: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -82,8 +84,12 @@ export function disabledProjectServers(repo: RepoInfo): Set<string> {
  * An existing key still wins, so a folder Claude Code already recorded under
  * some other spelling keeps working instead of gaining a second entry.
  */
-export function projectConfigKey(repo: RepoInfo, claudeJson?: Record<string, unknown> | null): string {
-  const json = claudeJson === undefined ? readJson(getClaudePaths(repo).userClaudeJson) : claudeJson;
+export function projectConfigKey(
+  repo: RepoInfo,
+  claudeJson?: Record<string, unknown> | null,
+): string {
+  const json =
+    claudeJson === undefined ? readJson(getClaudePaths(repo).userClaudeJson) : claudeJson;
   const projects = json?.["projects"];
   if (typeof projects === "object" && projects !== null) {
     for (const key of [repo.projectDir, repo.cwd]) {

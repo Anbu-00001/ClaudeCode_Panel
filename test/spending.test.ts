@@ -1,16 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { ATTRIBUTION_LIMIT, PRIVACY_NOTE, formatMoney, friendlyModel, parseUsage } from "../src/core/ccusage.js";
+import {
+  ATTRIBUTION_LIMIT,
+  formatMoney,
+  friendlyModel,
+  PRIVACY_NOTE,
+  parseUsage,
+} from "../src/core/ccusage.js";
 
 /** Shapes captured from the real ccusage 20.0.19 output, not invented. */
 const REAL_DAILY = {
   daily: [
     {
-      period: "2026-08-05", totalCost: 12.5, totalTokens: 900,
+      period: "2026-08-05",
+      totalCost: 12.5,
+      totalTokens: 900,
       modelsUsed: ["claude-opus-5"],
       modelBreakdowns: [{ modelName: "claude-opus-5", cost: 12.5, inputTokens: 5 }],
     },
     {
-      period: "2026-08-06", totalCost: 48.25078889999998, totalTokens: 1200,
+      period: "2026-08-06",
+      totalCost: 48.25078889999998,
+      totalTokens: 1200,
       modelsUsed: ["claude-opus-5", "claude-sonnet-5"],
       modelBreakdowns: [
         { modelName: "claude-sonnet-5", cost: 8.0 },
@@ -36,7 +46,9 @@ describe("reading spending", () => {
   });
 
   it("finds the rows even when the key follows the subcommand name", () => {
-    expect(parseUsage({ monthly: [{ month: "2026-08", totalCost: 5 }] }, "monthly").rows).toHaveLength(1);
+    expect(
+      parseUsage({ monthly: [{ month: "2026-08", totalCost: 5 }] }, "monthly").rows,
+    ).toHaveLength(1);
     expect(parseUsage({ weekly: [{ period: "w1", totalCost: 5 }] }, "weekly").rows).toHaveLength(1);
   });
 
@@ -48,7 +60,15 @@ describe("reading spending", () => {
   });
 
   it("falls back to summing rows when totals are missing", () => {
-    const r = parseUsage({ daily: [{ period: "a", totalCost: 2 }, { period: "b", totalCost: 3 }] }, "daily");
+    const r = parseUsage(
+      {
+        daily: [
+          { period: "a", totalCost: 2 },
+          { period: "b", totalCost: 3 },
+        ],
+      },
+      "daily",
+    );
     expect(r.totalCost).toBe(5);
   });
 

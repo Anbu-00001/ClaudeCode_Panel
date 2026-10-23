@@ -2,19 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { validateByFilename, validateClaudeJson, validateSettings } from "../src/core/validate.js";
 import {
-  type Operation,
   atomicWriteFile,
   findFencedBlock,
+  type Operation,
   runTransaction,
   serializeJson,
   snapshot,
 } from "../src/core/write.js";
-import {
-  validateByFilename,
-  validateClaudeJson,
-  validateSettings,
-} from "../src/core/validate.js";
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -64,7 +60,9 @@ describe("atomicWriteFile", () => {
   it("leaves no temp files behind", () => {
     const target = path.join(workDir, "settings.json");
     atomicWriteFile(target, serializeJson({ a: 1 }));
-    const leftovers = fs.readdirSync(workDir).filter((f) => f.includes("ccpanel") && f.endsWith(".tmp"));
+    const leftovers = fs
+      .readdirSync(workDir)
+      .filter((f) => f.includes("ccpanel") && f.endsWith(".tmp"));
     expect(leftovers).toEqual([]);
   });
 });
@@ -100,7 +98,16 @@ describe("write protocol (§12.1)", () => {
     fs.writeFileSync(target, '{\n  "a": 1,\n  "b": 2,\n}\n');
 
     const result = runTransaction(
-      [{ kind: "patchJson", filePath: target, keyPath: ["a"], mutate: (d) => { d["a"] = 2; } }],
+      [
+        {
+          kind: "patchJson",
+          filePath: target,
+          keyPath: ["a"],
+          mutate: (d) => {
+            d["a"] = 2;
+          },
+        },
+      ],
       meta,
     );
 
@@ -268,7 +275,11 @@ describe("transactions", () => {
 
   it("passes the completed changes to the undo recorder exactly once", () => {
     const recorder = vi.fn();
-    runTransaction([{ kind: "createFile", filePath: path.join(workDir, "z.md"), contents: "z\n" }], meta, recorder);
+    runTransaction(
+      [{ kind: "createFile", filePath: path.join(workDir, "z.md"), contents: "z\n" }],
+      meta,
+      recorder,
+    );
     expect(recorder).toHaveBeenCalledTimes(1);
   });
 
@@ -290,7 +301,14 @@ describe("fenced CLAUDE.md blocks (§9.2)", () => {
     fs.writeFileSync(claudeMd, "# My project\n\nMy own notes above.\n");
 
     const added = runTransaction(
-      [{ kind: "appendBlock", filePath: claudeMd, blockId: "code-reviewer", content: "Review rules here." }],
+      [
+        {
+          kind: "appendBlock",
+          filePath: claudeMd,
+          blockId: "code-reviewer",
+          content: "Review rules here.",
+        },
+      ],
       meta,
     );
     expect(added.ok).toBe(true);
@@ -323,7 +341,10 @@ describe("fenced CLAUDE.md blocks (§9.2)", () => {
 
   it("refuses to append the same block twice", () => {
     const claudeMd = path.join(workDir, "CLAUDE.md");
-    runTransaction([{ kind: "appendBlock", filePath: claudeMd, blockId: "kit", content: "one" }], meta);
+    runTransaction(
+      [{ kind: "appendBlock", filePath: claudeMd, blockId: "kit", content: "one" }],
+      meta,
+    );
     const second = runTransaction(
       [{ kind: "appendBlock", filePath: claudeMd, blockId: "kit", content: "two" }],
       meta,

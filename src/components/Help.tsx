@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import React from "react";
 
 /**
  * The whole key vocabulary (§8.1). Shown on `?` from anywhere. No vim keys —

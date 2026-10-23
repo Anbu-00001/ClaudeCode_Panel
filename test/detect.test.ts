@@ -54,7 +54,10 @@ describe("detectLadderState", () => {
 
   it("detects skills from .claude/skills/<name>/SKILL.md", () => {
     fs.mkdirSync(path.join(projectDir, ".claude", "skills", "check"), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, ".claude", "skills", "check", "SKILL.md"), "---\nname: check\n---\nbody");
+    fs.writeFileSync(
+      path.join(projectDir, ".claude", "skills", "check", "SKILL.md"),
+      "---\nname: check\n---\nbody",
+    );
     expect(detectLadderState(projectDir).rungs.skills).toBe(true);
   });
 
@@ -65,17 +68,26 @@ describe("detectLadderState", () => {
 
   it("detects helpers from nested .claude/agents/ subfolders (Claude Code scans recursively)", () => {
     fs.mkdirSync(path.join(projectDir, ".claude", "agents", "review"), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, ".claude", "agents", "review", "reviewer.md"), "---\nname: reviewer\n---\n");
+    fs.writeFileSync(
+      path.join(projectDir, ".claude", "agents", "review", "reviewer.md"),
+      "---\nname: reviewer\n---\n",
+    );
     expect(detectLadderState(projectDir).rungs.helpers).toBe(true);
   });
 
   it("detects tools from project .mcp.json", () => {
-    fs.writeFileSync(path.join(projectDir, ".mcp.json"), JSON.stringify({ mcpServers: { foo: { command: "foo" } } }));
+    fs.writeFileSync(
+      path.join(projectDir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { foo: { command: "foo" } } }),
+    );
     expect(detectLadderState(projectDir).rungs.tools).toBe(true);
   });
 
   it("detects tools from a user-scope server at the top level of ~/.claude.json", () => {
-    fs.writeFileSync(path.join(fakeHome, ".claude.json"), JSON.stringify({ mcpServers: { serena: { command: "serena" } } }));
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { serena: { command: "serena" } } }),
+    );
     expect(detectLadderState(projectDir).rungs.tools).toBe(true);
   });
 
@@ -92,20 +104,30 @@ describe("detectLadderState", () => {
     fs.mkdirSync(path.join(fakeHome, ".claude"), { recursive: true });
     fs.writeFileSync(
       path.join(fakeHome, ".claude", "settings.json"),
-      JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo hi" }] }] } }),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo hi" }] }],
+        },
+      }),
     );
     expect(detectLadderState(projectDir).rungs.automaticChecks).toBe(true);
   });
 
   it("does not count an empty hooks object as automatic checks", () => {
     fs.mkdirSync(path.join(projectDir, ".claude"), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, ".claude", "settings.json"), JSON.stringify({ hooks: {} }));
+    fs.writeFileSync(
+      path.join(projectDir, ".claude", "settings.json"),
+      JSON.stringify({ hooks: {} }),
+    );
     expect(detectLadderState(projectDir).rungs.automaticChecks).toBe(false);
   });
 
   it("detects memory from an explicit autoCompactWindow key", () => {
     fs.mkdirSync(path.join(projectDir, ".claude"), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, ".claude", "settings.json"), JSON.stringify({ autoCompactWindow: 150000 }));
+    fs.writeFileSync(
+      path.join(projectDir, ".claude", "settings.json"),
+      JSON.stringify({ autoCompactWindow: 150000 }),
+    );
     expect(detectLadderState(projectDir).rungs.memory).toBe(true);
   });
 

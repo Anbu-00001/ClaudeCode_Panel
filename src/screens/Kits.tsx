@@ -1,9 +1,9 @@
 import { Box, Text, useInput } from "ink";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { RUNG_LABELS } from "../core/detect.js";
-import { type Kit, isKitInstalled } from "../core/kits.js";
+import { isKitInstalled, type Kit } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 
 interface KitsProps {

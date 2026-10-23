@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import path from "node:path";
 import { homedir } from "node:os";
+import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type RepoInfo, getClaudePaths } from "./paths.js";
+import { getClaudePaths, type RepoInfo } from "./paths.js";
 import type { SkillOverrideState } from "./validate.js";
 
 /**

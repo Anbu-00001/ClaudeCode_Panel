@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { type RepoInfo, getClaudePaths } from "./paths.js";
+import { getClaudePaths, type RepoInfo } from "./paths.js";
 import { projectConfigKey } from "./tools.js";
 import { appendUndoEntry } from "./undo.js";
 import type { SkillOverrideState } from "./validate.js";
-import { type TransactionResult, runTransaction } from "./write.js";
+import { runTransaction, type TransactionResult } from "./write.js";
 
 /**
  * The four native switches (§5.3). Every one of these is a documented Claude

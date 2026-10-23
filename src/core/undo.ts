@@ -3,12 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { maskText } from "./mask.js";
 import {
-  type RecordedChange,
-  type TransactionMeta,
   appendLine,
   atomicWriteFile,
   ccpanelHome,
+  type RecordedChange,
   revertChanges,
+  type TransactionMeta,
 } from "./write.js";
 
 /** Append-only history of everything ccpanel changed (§12.3). */
@@ -68,9 +68,7 @@ export function readUndoLog(): UndoEntry[] {
       // A partially written final line is skipped rather than failing the
       // whole history.
       entries.push(JSON.parse(line) as UndoEntry);
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return entries;
 }

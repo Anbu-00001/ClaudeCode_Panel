@@ -1,15 +1,15 @@
 import { Box, Text, useInput } from "ink";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { Preview } from "../components/Preview.js";
 import {
-  type Kit,
-  type VerifyResult,
   installKit,
   isKitInstalled,
+  type Kit,
   previewKit,
   uninstallKit,
+  type VerifyResult,
   verifyDeletionWarning,
 } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
@@ -119,7 +119,12 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
                         {c.ok ? "✓ " : "✗ "}
                         {c.label}
                       </Text>
-                      {c.detail ? <Text dimColor>{"   "}{c.detail}</Text> : null}
+                      {c.detail ? (
+                        <Text dimColor>
+                          {"   "}
+                          {c.detail}
+                        </Text>
+                      ) : null}
                     </Box>
                   ))}
                   {!verify.ok ? (

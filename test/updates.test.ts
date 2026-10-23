@@ -3,25 +3,25 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolvePaths } from "../src/core/paths.js";
-import { type SkillInfo, listSkills } from "../src/core/skills.js";
+import { listSkills, type SkillInfo } from "../src/core/skills.js";
 import {
+  checkSkillUpdate,
+  compareVersions,
   type ExecOptions,
   type ExecResult,
   type ExecRunner,
-  type GitUpdateCheck,
-  type ManualUpdateCheck,
-  type PluginUpdateCheck,
-  type ToolUpdateCheck,
-  checkSkillUpdate,
-  compareVersions,
   extractVersion,
   fetchGitRemote,
   findOnPath,
   findSelfUpdateSubcommand,
   findSkillRepoRoot,
   findVersionMarker,
+  type GitUpdateCheck,
   listSkillUpdates,
+  type ManualUpdateCheck,
+  type PluginUpdateCheck,
   summarizeUpdates,
+  type ToolUpdateCheck,
 } from "../src/core/updates.js";
 
 /**
@@ -104,7 +104,10 @@ const forbiddenExec: ExecRunner = async (file, args) => {
 function makeSkillDir(parent: string, name: string): string {
   const dir = path.join(parent, name);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: does things\n---\n`);
+  fs.writeFileSync(
+    path.join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: does things\n---\n`,
+  );
   return dir;
 }
 
@@ -214,7 +217,18 @@ describe("comparing versions without a dependency", () => {
   });
 
   it("returns unknown for anything that isn't a version", () => {
-    for (const junk of ["", "   ", "latest", "main", "HEAD", "1.x", "v", "1.0.0-", "abc.def", "e3f9a1c"]) {
+    for (const junk of [
+      "",
+      "   ",
+      "latest",
+      "main",
+      "HEAD",
+      "1.x",
+      "v",
+      "1.0.0-",
+      "abc.def",
+      "e3f9a1c",
+    ]) {
       expect(compareVersions(junk, "1.0.0"), junk).toBeNull();
       expect(compareVersions("1.0.0", junk), junk).toBeNull();
     }
@@ -272,14 +286,26 @@ describe("finding a command on PATH", () => {
 
 describe("only suggesting a command the tool admits to having", () => {
   it("finds a self-update subcommand", () => {
-    const help = ["Usage: sometool <command>", "", "Commands:", "  self-update      update sometool itself", "  build            build things"].join("\n");
+    const help = [
+      "Usage: sometool <command>",
+      "",
+      "Commands:",
+      "  self-update      update sometool itself",
+      "  build            build things",
+    ].join("\n");
     expect(findSelfUpdateSubcommand(help)).toBe("self-update");
   });
 
   it("prefers the most explicit wording", () => {
-    const help = ["  update [pkg]   update packages", "  upgrade        upgrade sometool", "  self-update    update sometool"].join("\n");
+    const help = [
+      "  update [pkg]   update packages",
+      "  upgrade        upgrade sometool",
+      "  self-update    update sometool",
+    ].join("\n");
     expect(findSelfUpdateSubcommand(help)).toBe("self-update");
-    expect(findSelfUpdateSubcommand("  update [pkg]  update packages\n  upgrade   upgrade sometool")).toBe("upgrade");
+    expect(
+      findSelfUpdateSubcommand("  update [pkg]  update packages\n  upgrade   upgrade sometool"),
+    ).toBe("upgrade");
   });
 
   it("rejects an update subcommand that acts on an argument, not on itself", () => {
@@ -302,13 +328,20 @@ describe("only suggesting a command the tool admits to having", () => {
   });
 
   it("doesn't mistake prose for a subcommand", () => {
-    const help = ["Usage: sometool", "", "Run this often to update the graph and keep it current.", "upgrade your plan at example.invalid"].join("\n");
+    const help = [
+      "Usage: sometool",
+      "",
+      "Run this often to update the graph and keep it current.",
+      "upgrade your plan at example.invalid",
+    ].join("\n");
     expect(findSelfUpdateSubcommand(help)).toBeNull();
   });
 
   it("returns null for help that offers nothing", () => {
     expect(findSelfUpdateSubcommand("")).toBeNull();
-    expect(findSelfUpdateSubcommand("Usage: sometool [options]\n  --verbose   say more")).toBeNull();
+    expect(
+      findSelfUpdateSubcommand("Usage: sometool [options]\n  --verbose   say more"),
+    ).toBeNull();
   });
 });
 
@@ -322,11 +355,19 @@ describe("a skill from an installed bundle", () => {
 
   it("is behind when the catalogue lists a newer version", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: "1.2.0" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: "1.2.0",
+    });
     putOnPath("claude");
 
     const check = (await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: binEnv(), exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: forbiddenExec,
+      now: NOW,
     })) as PluginUpdateCheck;
 
     expect(check.method).toBe("plugin");
@@ -339,11 +380,19 @@ describe("a skill from an installed bundle", () => {
 
   it("is up to date when the two versions match", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "2.0.6");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "2.0.6", installPath, catalogVersion: "2.0.6" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "2.0.6",
+      installPath,
+      catalogVersion: "2.0.6",
+    });
     putOnPath("claude");
 
     const check = await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: binEnv(), exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: forbiddenExec,
+      now: NOW,
     });
 
     expect(check.status).toBe("up-to-date");
@@ -354,10 +403,18 @@ describe("a skill from an installed bundle", () => {
     // Most real catalogue entries have no version field at all. Staleness is
     // genuinely unknowable there, and saying "up to date" would be a lie.
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: null });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: null,
+    });
 
     const check = (await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     })) as PluginUpdateCheck;
 
     expect(check.status).toBe("unknown");
@@ -368,10 +425,18 @@ describe("a skill from an installed bundle", () => {
 
   it("shows the catalogue's git ref but never judges staleness by it", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: null });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: null,
+    });
 
     const check = (await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     })) as PluginUpdateCheck;
 
     expect(check.catalogRef).toBe("v9.9.9");
@@ -380,10 +445,19 @@ describe("a skill from an installed bundle", () => {
 
   it("is unknown when the catalogue has no entry for the bundle at all", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: "5.0.0", catalogName: "something-else" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: "5.0.0",
+      catalogName: "something-else",
+    });
 
     const check = await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     });
 
     expect(check.status).toBe("unknown");
@@ -392,10 +466,18 @@ describe("a skill from an installed bundle", () => {
 
   it("offers no command when the claude CLI isn't installed", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: "1.2.0" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: "1.2.0",
+    });
 
     const check = await checkSkillUpdate(pluginSkill(installPath, "thing@some-marketplace"), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     });
 
     expect(check.status).toBe("behind");
@@ -407,9 +489,15 @@ describe("a skill from an installed bundle", () => {
     // at an id that exists in the developer's real ~/.claude and confirm the
     // empty temp home is what gets read.
     const installPath = path.join(fakeHome, "plugins", "typescript-lsp");
-    const check = (await checkSkillUpdate(pluginSkill(installPath, "typescript-lsp@claude-plugins-official"), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
-    })) as PluginUpdateCheck;
+    const check = (await checkSkillUpdate(
+      pluginSkill(installPath, "typescript-lsp@claude-plugins-official"),
+      {
+        home: fakeHome,
+        env: emptyEnv,
+        exec: forbiddenExec,
+        now: NOW,
+      },
+    )) as PluginUpdateCheck;
 
     expect(check.installedVersion).toBeNull();
     expect(check.detail).toContain("no installation record");
@@ -483,7 +571,10 @@ describe("a skill that is a git clone", () => {
     const stub = gitExec({ upstream: "origin/main", counts: "2\t0" });
 
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: stub.exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: stub.exec,
+      now: NOW,
     })) as GitUpdateCheck;
 
     expect(check.method).toBe("git");
@@ -500,7 +591,10 @@ describe("a skill that is a git clone", () => {
   it("says where the commit count came from when the remote was never contacted", async () => {
     const dir = gitDir("clone-behind-unfetched", null);
     const check = await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: gitExec({ upstream: "origin/main", counts: "1\t0" }).exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: gitExec({ upstream: "origin/main", counts: "1\t0" }).exec,
+      now: NOW,
     });
 
     expect(check.status).toBe("behind");
@@ -512,7 +606,10 @@ describe("a skill that is a git clone", () => {
   it("says up to date only when the local refs are recent", async () => {
     const dir = gitDir("clone-fresh", new Date(NOW.getTime() - 5 * 60_000));
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec,
+      now: NOW,
     })) as GitUpdateCheck;
 
     expect(check.status).toBe("up-to-date");
@@ -522,7 +619,10 @@ describe("a skill that is a git clone", () => {
   it("won't call a stale clone up to date just because it has no new commits", async () => {
     const dir = gitDir("clone-stale", new Date(NOW.getTime() - 30 * 24 * 60 * 60_000));
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec,
+      now: NOW,
     })) as GitUpdateCheck;
 
     expect(check.status).toBe("unknown");
@@ -535,7 +635,10 @@ describe("a skill that is a git clone", () => {
   it("is unknown when the clone has never contacted a remote", async () => {
     const dir = gitDir("clone-never", null);
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: gitExec({ upstream: "origin/main", counts: "0\t0" }).exec,
+      now: NOW,
     })) as GitUpdateCheck;
 
     expect(check.status).toBe("unknown");
@@ -546,7 +649,10 @@ describe("a skill that is a git clone", () => {
   it("has no update path when the branch follows nothing", async () => {
     const dir = gitDir("clone-detached", null);
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: gitExec({ upstream: null }).exec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: gitExec({ upstream: null }).exec,
+      now: NOW,
     })) as GitUpdateCheck;
 
     expect(check.status).toBe("unknown");
@@ -557,7 +663,8 @@ describe("a skill that is a git clone", () => {
   it("mentions local commits and uncommitted changes", async () => {
     const dir = gitDir("clone-messy", new Date(NOW.getTime() - 60_000));
     const check = await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv,
+      home: fakeHome,
+      env: emptyEnv,
       exec: gitExec({ upstream: "origin/main", counts: "3\t1", dirty: " M SKILL.md\n" }).exec,
       now: NOW,
     });
@@ -570,7 +677,11 @@ describe("a skill that is a git clone", () => {
 describe("checking the remote on purpose", () => {
   it("is the one call that touches the network, and reports what it ran", async () => {
     const stub = makeExec(() => "");
-    const outcome = await fetchGitRemote("/some/repo", { exec: stub.exec, home: fakeHome, env: emptyEnv });
+    const outcome = await fetchGitRemote("/some/repo", {
+      exec: stub.exec,
+      home: fakeHome,
+      env: emptyEnv,
+    });
 
     expect(outcome.ok).toBe(true);
     expect(outcome.argv).toEqual(["git", "-C", "/some/repo", "fetch", "--quiet"]);
@@ -579,15 +690,27 @@ describe("checking the remote on purpose", () => {
 
   it("treats a missing git as an answer, not a crash", async () => {
     const stub = makeExec(() => ({ ok: false, failure: "missing", code: null }));
-    const outcome = await fetchGitRemote("/some/repo", { exec: stub.exec, home: fakeHome, env: emptyEnv });
+    const outcome = await fetchGitRemote("/some/repo", {
+      exec: stub.exec,
+      home: fakeHome,
+      env: emptyEnv,
+    });
 
     expect(outcome.ok).toBe(false);
     expect(outcome.message).toContain("isn't installed");
   });
 
   it("passes on what git complained about", async () => {
-    const stub = makeExec(() => ({ ok: false, code: 128, stderr: "fatal: could not read from remote\nmore" }));
-    const outcome = await fetchGitRemote("/some/repo", { exec: stub.exec, home: fakeHome, env: emptyEnv });
+    const stub = makeExec(() => ({
+      ok: false,
+      code: 128,
+      stderr: "fatal: could not read from remote\nmore",
+    }));
+    const outcome = await fetchGitRemote("/some/repo", {
+      exec: stub.exec,
+      home: fakeHome,
+      env: emptyEnv,
+    });
 
     expect(outcome.ok).toBe(false);
     expect(outcome.message).toBe("fatal: could not read from remote");
@@ -640,7 +763,10 @@ describe("a skill installed by a tool that is on PATH", () => {
   it("is behind when the installed tool has moved on", async () => {
     const skill = markedSkill("sometool", "0.9.30");
     const check = (await checkSkillUpdate(skill, {
-      home: fakeHome, env: binEnv(), exec: toolExec("0.9.32", "Usage: sometool\n  build   build things").exec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: toolExec("0.9.32", "Usage: sometool\n  build   build things").exec,
+      now: NOW,
     })) as ToolUpdateCheck;
 
     expect(check.method).toBe("tool");
@@ -655,9 +781,13 @@ describe("a skill installed by a tool that is on PATH", () => {
 
   it("offers a command only when the tool's own help lists one", async () => {
     const skill = markedSkill("sometool", "0.9.30");
-    const help = "Usage: sometool <command>\n\nCommands:\n  self-update    update sometool in place\n";
+    const help =
+      "Usage: sometool <command>\n\nCommands:\n  self-update    update sometool in place\n";
     const check = await checkSkillUpdate(skill, {
-      home: fakeHome, env: binEnv(), exec: toolExec("0.9.32", help).exec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: toolExec("0.9.32", help).exec,
+      now: NOW,
     });
 
     expect(check.command?.argv).toEqual(["sometool", "self-update"]);
@@ -667,7 +797,10 @@ describe("a skill installed by a tool that is on PATH", () => {
   it("is up to date when the marker matches the tool", async () => {
     const skill = markedSkill("sometool", "0.9.32");
     const check = await checkSkillUpdate(skill, {
-      home: fakeHome, env: binEnv(), exec: toolExec("0.9.32", "Usage: sometool").exec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: toolExec("0.9.32", "Usage: sometool").exec,
+      now: NOW,
     });
 
     expect(check.status).toBe("up-to-date");
@@ -677,7 +810,10 @@ describe("a skill installed by a tool that is on PATH", () => {
   it("is unknown, not behind, when the skill is newer than the command", async () => {
     const skill = markedSkill("sometool", "1.1.0");
     const check = await checkSkillUpdate(skill, {
-      home: fakeHome, env: binEnv(), exec: toolExec("1.0.0", "Usage: sometool").exec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: toolExec("1.0.0", "Usage: sometool").exec,
+      now: NOW,
     });
 
     expect(check.status).toBe("unknown");
@@ -690,7 +826,10 @@ describe("a skill installed by a tool that is on PATH", () => {
     putOnPath("sometool");
 
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: binEnv(), exec: toolExec("1.0.0", "Usage: sometool").exec, now: NOW,
+      home: fakeHome,
+      env: binEnv(),
+      exec: toolExec("1.0.0", "Usage: sometool").exec,
+      now: NOW,
     })) as ToolUpdateCheck;
 
     expect(check.method).toBe("tool");
@@ -703,7 +842,10 @@ describe("a skill installed by a tool that is on PATH", () => {
     fs.writeFileSync(path.join(dir, ".sometool_version"), "1.0.0\n");
 
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     })) as ManualUpdateCheck;
 
     expect(check.method).toBe("manual");
@@ -722,7 +864,10 @@ describe("a skill nothing on disk explains", () => {
     fs.utimesSync(dir, changed, changed);
 
     const check = (await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     })) as ManualUpdateCheck;
 
     expect(check.method).toBe("manual");
@@ -740,13 +885,24 @@ describe("a skill nothing on disk explains", () => {
 describe("which kind of evidence wins", () => {
   it("prefers the bundle record over a git clone inside it", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: "1.0.0" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: "1.0.0",
+    });
     const dir = makeSkillDir(path.join(installPath, "skills"), "bundled");
     fs.mkdirSync(path.join(dir, ".git"));
 
-    const check = await checkSkillUpdate(skillAt(dir, { source: "plugin", pluginId: "thing@some-marketplace", switchable: false }), {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
-    });
+    const check = await checkSkillUpdate(
+      skillAt(dir, { source: "plugin", pluginId: "thing@some-marketplace", switchable: false }),
+      {
+        home: fakeHome,
+        env: emptyEnv,
+        exec: forbiddenExec,
+        now: NOW,
+      },
+    );
 
     expect(check.method).toBe("plugin");
   });
@@ -758,7 +914,8 @@ describe("which kind of evidence wins", () => {
     putOnPath("sometool");
 
     const check = await checkSkillUpdate(skillAt(dir), {
-      home: fakeHome, env: binEnv(),
+      home: fakeHome,
+      env: binEnv(),
       exec: makeExec((file) => (file === "git" ? "" : null)).exec,
       now: NOW,
     });
@@ -775,7 +932,10 @@ describe("checking a whole list", () => {
       skillAt(makeSkillDir(work, "three")),
     ];
     const checks = await listSkillUpdates(skills, {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     });
 
     expect(checks).toHaveLength(3);
@@ -784,12 +944,20 @@ describe("checking a whole list", () => {
 
   it("counts a behind-with-a-command skill as actionable", async () => {
     const installPath = path.join(fakeHome, ".claude", "plugins", "cache", "thing", "1.0.0");
-    writePluginState({ pluginId: "thing@some-marketplace", installedVersion: "1.0.0", installPath, catalogVersion: "1.2.0" });
+    writePluginState({
+      pluginId: "thing@some-marketplace",
+      installedVersion: "1.0.0",
+      installPath,
+      catalogVersion: "1.2.0",
+    });
     putOnPath("claude");
     const dir = makeSkillDir(path.join(installPath, "skills"), "bundled");
 
     const checks = await listSkillUpdates(
-      [skillAt(dir, { source: "plugin", pluginId: "thing@some-marketplace" }), skillAt(makeSkillDir(work, "plain"))],
+      [
+        skillAt(dir, { source: "plugin", pluginId: "thing@some-marketplace" }),
+        skillAt(makeSkillDir(work, "plain")),
+      ],
       { home: fakeHome, env: binEnv(), exec: forbiddenExec, now: NOW },
     );
 
@@ -806,7 +974,10 @@ describe("checking a whole list", () => {
     expect(skills).toHaveLength(1);
 
     const checks = await listSkillUpdates(skills, {
-      home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW,
+      home: fakeHome,
+      env: emptyEnv,
+      exec: forbiddenExec,
+      now: NOW,
     });
     expect(checks[0]?.method).toBe("manual");
     expect(checks[0]?.skill.name).toBe("local-helper");
@@ -819,7 +990,12 @@ describe("how child processes are run", () => {
     fs.mkdirSync(path.join(dir, ".git"));
     const stub = makeExec((file) => (file === "git" ? "" : null));
 
-    await checkSkillUpdate(skillAt(dir), { home: fakeHome, env: emptyEnv, exec: stub.exec, now: NOW });
+    await checkSkillUpdate(skillAt(dir), {
+      home: fakeHome,
+      env: emptyEnv,
+      exec: stub.exec,
+      now: NOW,
+    });
 
     expect(stub.calls.length).toBeGreaterThan(0);
     for (const call of stub.calls) {
@@ -833,7 +1009,12 @@ describe("how child processes are run", () => {
   it("never spawns anything for a skill with no evidence to check", async () => {
     const dir = makeSkillDir(work, "quiet");
     await expect(
-      checkSkillUpdate(skillAt(dir), { home: fakeHome, env: emptyEnv, exec: forbiddenExec, now: NOW }),
+      checkSkillUpdate(skillAt(dir), {
+        home: fakeHome,
+        env: emptyEnv,
+        exec: forbiddenExec,
+        now: NOW,
+      }),
     ).resolves.toMatchObject({ method: "manual" });
   });
 });

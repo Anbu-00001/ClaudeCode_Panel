@@ -159,7 +159,11 @@ describe("usage", () => {
 
     it("derives the server from only the first two `__` segments", async () => {
       writeLines(path.join(transcriptDir, "s1.jsonl"), [
-        toolLine({ sessionId: "s1", timestamp: "2026-08-01T10:00:00.000Z", name: "mcp__foo__bar__baz" }),
+        toolLine({
+          sessionId: "s1",
+          timestamp: "2026-08-01T10:00:00.000Z",
+          name: "mcp__foo__bar__baz",
+        }),
       ]);
 
       const repo = fakeRepo("/whatever");
@@ -175,7 +179,9 @@ describe("usage", () => {
     it("scopes to only the most recently modified transcript", async () => {
       const older = path.join(transcriptDir, "old-session.jsonl");
       const newer = path.join(transcriptDir, "new-session.jsonl");
-      writeLines(older, [toolLine({ sessionId: "old-session", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" })]);
+      writeLines(older, [
+        toolLine({ sessionId: "old-session", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" }),
+      ]);
       writeLines(newer, [
         toolLine({ sessionId: "new-session", timestamp: "2026-08-02T10:00:00.000Z", name: "Read" }),
       ]);
@@ -212,14 +218,20 @@ describe("usage", () => {
     it("skips garbage lines, truncated JSON, and off-shape entries, while still counting the good ones", async () => {
       const lines = [
         "not json at all {{{",
-        JSON.stringify({ sessionId: "s1", timestamp: "bad-date", message: { content: "a plain string, not an array" } }),
+        JSON.stringify({
+          sessionId: "s1",
+          timestamp: "bad-date",
+          message: { content: "a plain string, not an array" },
+        }),
         JSON.stringify({ sessionId: "s1" }), // no message field
         JSON.stringify({ sessionId: "s1", message: {} }), // message present, no content
         JSON.stringify({ sessionId: "s1", message: { content: [null, 42, "text"] } }), // non-object blocks
         JSON.stringify({ sessionId: "s1", message: { content: [{ type: "tool_use" }] } }), // missing name
         JSON.stringify({
           sessionId: "s1",
-          message: { content: [{ type: "text", text: "mentions tool_use in prose but isn't one" }] },
+          message: {
+            content: [{ type: "text", text: "mentions tool_use in prose but isn't one" }],
+          },
         }),
         toolLine({ sessionId: "s1", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" }),
         // a truncated tail, as if the writer was killed mid-line (no closing brace, no trailing newline)
@@ -250,7 +262,9 @@ describe("usage", () => {
         return; // root ignores file permissions — nothing to assert here
       }
       const filePath = path.join(transcriptDir, "locked.jsonl");
-      writeLines(filePath, [toolLine({ sessionId: "locked", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" })]);
+      writeLines(filePath, [
+        toolLine({ sessionId: "locked", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" }),
+      ]);
       fs.chmodSync(filePath, 0o000);
 
       try {
@@ -296,7 +310,9 @@ describe("usage", () => {
       const parts: string[] = [];
       for (let i = 0; i < LINES; i++) {
         if (i % 5 === 0) {
-          parts.push(toolLine({ sessionId: "big", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" }));
+          parts.push(
+            toolLine({ sessionId: "big", timestamp: "2026-08-01T10:00:00.000Z", name: "Bash" }),
+          );
         } else {
           // Realistic filler: a plain text turn, roughly the size of real prose.
           parts.push(
@@ -305,7 +321,9 @@ describe("usage", () => {
               timestamp: "2026-08-01T10:00:00.000Z",
               message: {
                 role: "assistant",
-                content: [{ type: "text", text: "Some ordinary reply with no tool call in it, ".repeat(4) }],
+                content: [
+                  { type: "text", text: "Some ordinary reply with no tool call in it, ".repeat(4) },
+                ],
               },
             }),
           );

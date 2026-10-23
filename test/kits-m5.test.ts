@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KIT_ORDER, getKit, installKit, isKitInstalled, loadKits, uninstallKit } from "../src/core/kits.js";
+import {
+  getKit,
+  installKit,
+  isKitInstalled,
+  KIT_ORDER,
+  loadKits,
+  uninstallKit,
+} from "../src/core/kits.js";
 import { resolvePaths } from "../src/core/paths.js";
 import { appendUndoEntry } from "../src/core/undo.js";
 
@@ -26,7 +33,9 @@ beforeEach(() => {
   repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-m5-"));
   fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-m5h-"));
   vi.mocked(os.homedir).mockReturnValue(fakeHome);
-  execSync("git init -q . && git config user.email t@t && git config user.name t", { cwd: repoDir });
+  execSync("git init -q . && git config user.email t@t && git config user.name t", {
+    cwd: repoDir,
+  });
 });
 afterEach(() => {
   fs.rmSync(repoDir, { recursive: true, force: true });
@@ -39,9 +48,14 @@ const kit = (id: string) => getKit(id, KITS)!;
 function runHook(script: string, payload: unknown, cwd = repoDir): string {
   try {
     return execFileSync("bash", [script], {
-      input: JSON.stringify(payload), cwd, encoding: "utf8", timeout: 10_000,
+      input: JSON.stringify(payload),
+      cwd,
+      encoding: "utf8",
+      timeout: 10_000,
     });
-  } catch (e) { return (e as { stdout?: string }).stdout ?? ""; }
+  } catch (e) {
+    return (e as { stdout?: string }).stdout ?? "";
+  }
 }
 const asks = (out: string) => out.includes('"permissionDecision":"ask"');
 
@@ -64,7 +78,15 @@ describe("the whole kit library", () => {
   });
 
   it("no kit uses a word a beginner would have to look up", () => {
-    const banned = ["MCP", "subagent", "frontmatter", "stdio", "PreToolUse", "PreCompact", "settings.json"];
+    const banned = [
+      "MCP",
+      "subagent",
+      "frontmatter",
+      "stdio",
+      "PreToolUse",
+      "PreCompact",
+      "settings.json",
+    ];
     for (const k of loadKits(KITS)) {
       const text = `${k.title} ${k.blurb} ${k.explain} ${k.newcomerProblem} ${k.honestLimit}`;
       for (const w of banned) expect(text.includes(w), `${k.id} says "${w}"`).toBe(false);
@@ -80,8 +102,19 @@ describe("safe-permissions", () => {
     ).permissions.allow;
 
     expect(allow).toContain("Bash(git status *)");
-    for (const dangerous of ["rm", "git push", "git commit", "npm install", "curl", "mv ", "git reset"]) {
-      expect(allow.some((r) => r.includes(dangerous)), `allows ${dangerous}`).toBe(false);
+    for (const dangerous of [
+      "rm",
+      "git push",
+      "git commit",
+      "npm install",
+      "curl",
+      "mv ",
+      "git reset",
+    ]) {
+      expect(
+        allow.some((r) => r.includes(dangerous)),
+        `allows ${dangerous}`,
+      ).toBe(false);
     }
   });
 });
@@ -89,7 +122,10 @@ describe("safe-permissions", () => {
 describe("commit-messages", () => {
   it("installs an ability the model can't trigger on its own, since committing is a side effect", () => {
     installKit(kit("commit-messages"), repo(), appendUndoEntry);
-    const skill = fs.readFileSync(path.join(repoDir, ".claude", "skills", "commit", "SKILL.md"), "utf8");
+    const skill = fs.readFileSync(
+      path.join(repoDir, ".claude", "skills", "commit", "SKILL.md"),
+      "utf8",
+    );
     expect(skill).toMatch(/^disable-model-invocation: true$/m);
     expect(skill).toContain("Do not commit.");
   });
@@ -101,36 +137,76 @@ describe("scope-guard", () => {
     fs.mkdirSync(path.join(repoDir, "src"), { recursive: true });
     fs.mkdirSync(path.join(repoDir, ".github", "workflows"), { recursive: true });
     for (const [f, c] of [
-      [".claude/settings.json", "{}"], ["CLAUDE.md", "# hi"], ["package-lock.json", "{}"],
-      ["src/app.ts", "x"], [".github/workflows/ci.yml", "on: push"],
-    ] as const) fs.writeFileSync(path.join(repoDir, f), c);
+      [".claude/settings.json", "{}"],
+      ["CLAUDE.md", "# hi"],
+      ["package-lock.json", "{}"],
+      ["src/app.ts", "x"],
+      [".github/workflows/ci.yml", "on: push"],
+    ] as const)
+      fs.writeFileSync(path.join(repoDir, f), c);
   });
 
-  for (const f of [".claude/settings.json", "CLAUDE.md", "package-lock.json", ".github/workflows/ci.yml"]) {
+  for (const f of [
+    ".claude/settings.json",
+    "CLAUDE.md",
+    "package-lock.json",
+    ".github/workflows/ci.yml",
+  ]) {
     it(`asks before changing ${f}`, () => {
-      const out = runHook(SCOPE_HOOK, { tool_name: "Edit", tool_input: { file_path: path.join(repoDir, f) } });
+      const out = runHook(SCOPE_HOOK, {
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(repoDir, f) },
+      });
       expect(asks(out)).toBe(true);
     });
   }
 
   it("stays silent for an ordinary source file", () => {
-    expect(asks(runHook(SCOPE_HOOK, { tool_name: "Edit", tool_input: { file_path: path.join(repoDir, "src/app.ts") } }))).toBe(false);
+    expect(
+      asks(
+        runHook(SCOPE_HOOK, {
+          tool_name: "Edit",
+          tool_input: { file_path: path.join(repoDir, "src/app.ts") },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("stays silent when creating a brand-new file, since nothing is destroyed", () => {
-    expect(asks(runHook(SCOPE_HOOK, { tool_name: "Write", tool_input: { file_path: path.join(repoDir, "CLAUDE-new.md") } }))).toBe(false);
+    expect(
+      asks(
+        runHook(SCOPE_HOOK, {
+          tool_name: "Write",
+          tool_input: { file_path: path.join(repoDir, "CLAUDE-new.md") },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("ignores tools that don't change files", () => {
-    expect(asks(runHook(SCOPE_HOOK, { tool_name: "Read", tool_input: { file_path: path.join(repoDir, "CLAUDE.md") } }))).toBe(false);
+    expect(
+      asks(
+        runHook(SCOPE_HOOK, {
+          tool_name: "Read",
+          tool_input: { file_path: path.join(repoDir, "CLAUDE.md") },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("fails open on rubbish input", () => {
     for (const bad of ["", "not json{{", "null", "[]"]) {
       let out = "";
       try {
-        out = execFileSync("bash", [SCOPE_HOOK], { input: bad, cwd: repoDir, encoding: "utf8", timeout: 5000 });
-      } catch { out = ""; }
+        out = execFileSync("bash", [SCOPE_HOOK], {
+          input: bad,
+          cwd: repoDir,
+          encoding: "utf8",
+          timeout: 5000,
+        });
+      } catch {
+        out = "";
+      }
       expect(asks(out)).toBe(false);
     }
   });
@@ -151,8 +227,13 @@ describe("scope-guard", () => {
 describe("context-rescue", () => {
   it("registers for both automatic and manual shortening", () => {
     installKit(kit("context-rescue"), repo(), appendUndoEntry);
-    const hooks = JSON.parse(fs.readFileSync(path.join(repoDir, ".claude", "settings.json"), "utf8")).hooks;
-    expect(hooks.PreCompact.map((h: { matcher: string }) => h.matcher).sort()).toEqual(["auto", "manual"]);
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(repoDir, ".claude", "settings.json"), "utf8"),
+    ).hooks;
+    expect(hooks.PreCompact.map((h: { matcher: string }) => h.matcher).sort()).toEqual([
+      "auto",
+      "manual",
+    ]);
   });
 
   it("writes a note naming the unsaved files, and never blocks", () => {
@@ -171,7 +252,9 @@ describe("context-rescue", () => {
   it("still writes something useful outside a git repo", () => {
     const plain = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-plain-"));
     runHook(COMPACT_HOOK, { hook_event_name: "PreCompact", trigger: "manual", cwd: plain }, plain);
-    expect(fs.readFileSync(path.join(plain, ".claude", "where-we-got-to.md"), "utf8")).toContain("not tracked by git");
+    expect(fs.readFileSync(path.join(plain, ".claude", "where-we-got-to.md"), "utf8")).toContain(
+      "not tracked by git",
+    );
     fs.rmSync(plain, { recursive: true, force: true });
   });
 });
@@ -179,7 +262,10 @@ describe("context-rescue", () => {
 describe("explore-first", () => {
   it("runs in its own space so searching doesn't fill the main conversation", () => {
     installKit(kit("explore-first"), repo(), appendUndoEntry);
-    const skill = fs.readFileSync(path.join(repoDir, ".claude", "skills", "explore", "SKILL.md"), "utf8");
+    const skill = fs.readFileSync(
+      path.join(repoDir, ".claude", "skills", "explore", "SKILL.md"),
+      "utf8",
+    );
     expect(skill).toMatch(/^context: fork$/m);
     expect(skill).toMatch(/^agent: Explore$/m);
   });

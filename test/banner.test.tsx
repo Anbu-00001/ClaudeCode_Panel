@@ -1,8 +1,7 @@
-import { render } from "ink-testing-library";
 import { createRequire } from "node:module";
-import React from "react";
+import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
-import { Banner, WORDMARK_LINES, accentColor, ccpanelVersion } from "../src/components/Banner.js";
+import { accentColor, Banner, ccpanelVersion, WORDMARK_LINES } from "../src/components/Banner.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };

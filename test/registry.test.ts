@@ -27,7 +27,11 @@ describe("curated list is exact-match only", () => {
   it("does not vouch for a lookalike just because the name contains a curated word", () => {
     // The bug this guards: `playwright-stealth` and `playwrightselectorguard`
     // were being marked hand-checked and given the official server's wording.
-    for (const lookalike of ["playwright-stealth", "playwrightselectorguard-mcp", "playwright-report-mcp"]) {
+    for (const lookalike of [
+      "playwright-stealth",
+      "playwrightselectorguard-mcp",
+      "playwright-report-mcp",
+    ]) {
       expect(Object.keys(CURATED)).not.toContain(lookalike);
       expect(lookalike in CURATED).toBe(false);
     }

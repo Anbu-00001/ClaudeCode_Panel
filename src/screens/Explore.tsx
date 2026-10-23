@@ -1,9 +1,9 @@
 import { Box, Text, useInput } from "ink";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { type ExplainEntry, loadExplain } from "../core/explain.js";
-import { type Kit, isKitInstalled } from "../core/kits.js";
+import { isKitInstalled, type Kit } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 
 interface ExploreProps {
@@ -81,7 +81,9 @@ export function Explore({ kits, repo, onOpenKit, onBack }: ExploreProps) {
             {currentKit ? (
               <Box marginTop={1}>
                 <Text color={alreadyHave ? "green" : "cyan"}>
-                  {alreadyHave ? "✓ You already have this set up." : "→ Press Enter to set this up."}
+                  {alreadyHave
+                    ? "✓ You already have this set up."
+                    : "→ Press Enter to set this up."}
                 </Text>
               </Box>
             ) : null}

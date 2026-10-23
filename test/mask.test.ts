@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MASK, isSecret, looksLikeSecret, maskDeep, maskText, maskValue } from "../src/core/mask.js";
+import {
+  isSecret,
+  looksLikeSecret,
+  MASK,
+  maskDeep,
+  maskText,
+  maskValue,
+} from "../src/core/mask.js";
 
 describe("secret detection (§12.4)", () => {
   it("recognises credential shapes by value", () => {
@@ -27,7 +34,10 @@ describe("secret detection (§12.4)", () => {
   });
 
   it("masks a whole subtree under a secret-looking key", () => {
-    const masked = maskDeep({ auth: { token: "abc", nested: { deeper: "xyz" } } }) as Record<string, unknown>;
+    const masked = maskDeep({ auth: { token: "abc", nested: { deeper: "xyz" } } }) as Record<
+      string,
+      unknown
+    >;
     expect(masked["auth"]).toBe(MASK);
   });
 

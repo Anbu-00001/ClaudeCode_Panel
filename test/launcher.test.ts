@@ -156,9 +156,7 @@ describe("the packaged files the command needs at runtime", () => {
   it("does not ship the source tree or the tests", () => {
     // Not size for its own sake: src/ in the package means two copies of the
     // app on disk and a real chance of debugging the wrong one.
-    const strays = packed.filter(
-      (f) => f.path.startsWith("src/") || f.path.startsWith("test/"),
-    );
+    const strays = packed.filter((f) => f.path.startsWith("src/") || f.path.startsWith("test/"));
     expect(strays.map((f) => f.path)).toEqual([]);
   });
 });

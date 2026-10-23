@@ -1,11 +1,11 @@
-import { Box, Text, useApp, useInput } from "ink";
 import path from "node:path";
-import React, { useMemo, useState } from "react";
+import { Box, Text, useApp, useInput } from "ink";
+import { useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { FirstRun, Help } from "../components/Help.js";
 import { List, type ListItem } from "../components/List.js";
-import { RUNG_LABELS, RUNG_ORDER, type LadderState } from "../core/detect.js";
-import { type Kit, isKitInstalled } from "../core/kits.js";
+import { type LadderState, RUNG_LABELS, RUNG_ORDER } from "../core/detect.js";
+import { isKitInstalled, type Kit } from "../core/kits.js";
 
 interface LadderProps {
   state: LadderState;
@@ -24,7 +24,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOpenCommands, onOpenManage, onOpenSpending }: LadderProps) {
+export function Ladder({
+  state,
+  kits,
+  onOpenKits,
+  onOpenKit,
+  onOpenExplore,
+  onOpenCommands,
+  onOpenManage,
+  onOpenSpending,
+}: LadderProps) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -124,7 +133,10 @@ export function Ladder({ state, kits, onOpenKits, onOpenKit, onOpenExplore, onOp
             <Box key={row.join(",")}>
               {row.map((rung) => (
                 <Box key={rung} width={27}>
-                  <Text color={state.rungs[rung] ? "green" : undefined} dimColor={!state.rungs[rung]}>
+                  <Text
+                    color={state.rungs[rung] ? "green" : undefined}
+                    dimColor={!state.rungs[rung]}
+                  >
                     {state.rungs[rung] ? "✓ " : "· "}
                     {RUNG_LABELS[rung]}
                   </Text>

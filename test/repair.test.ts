@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolvePaths } from "../src/core/paths.js";
-import { checkConfigFiles, findRestoreCandidates, hasProblems, restoreFromBackup } from "../src/core/repair.js";
+import {
+  checkConfigFiles,
+  findRestoreCandidates,
+  hasProblems,
+  restoreFromBackup,
+} from "../src/core/repair.js";
 import { serializeJson, snapshot } from "../src/core/write.js";
 
 vi.mock("node:os", async (importOriginal) => {
@@ -29,14 +34,20 @@ afterEach(() => {
 describe("config health check (§10.8)", () => {
   it("reports a clean project as having no problems", () => {
     fs.mkdirSync(path.join(workDir, ".claude"), { recursive: true });
-    fs.writeFileSync(path.join(workDir, ".claude", "settings.json"), serializeJson({ permissions: { allow: [] } }));
+    fs.writeFileSync(
+      path.join(workDir, ".claude", "settings.json"),
+      serializeJson({ permissions: { allow: [] } }),
+    );
     const statuses = checkConfigFiles(resolvePaths(workDir));
     expect(hasProblems(statuses)).toBe(false);
   });
 
   it("reports a broken file with its parse error and line number", () => {
     fs.mkdirSync(path.join(workDir, ".claude"), { recursive: true });
-    fs.writeFileSync(path.join(workDir, ".claude", "settings.json"), '{\n  "a": 1,\n  "b": 2,\n}\n');
+    fs.writeFileSync(
+      path.join(workDir, ".claude", "settings.json"),
+      '{\n  "a": 1,\n  "b": 2,\n}\n',
+    );
 
     const statuses = checkConfigFiles(resolvePaths(workDir));
     const broken = statuses.find((s) => s.health === "broken");
@@ -96,7 +107,10 @@ describe("restore candidates", () => {
   it("finds Claude Code's own rotating backups by their unix-ms naming", () => {
     const ccBackups = path.join(fakeHome, ".claude", "backups");
     fs.mkdirSync(ccBackups, { recursive: true });
-    fs.writeFileSync(path.join(ccBackups, ".claude.json.backup.1785994762866"), serializeJson({ from: "cc" }));
+    fs.writeFileSync(
+      path.join(ccBackups, ".claude.json.backup.1785994762866"),
+      serializeJson({ from: "cc" }),
+    );
 
     const candidates = findRestoreCandidates(path.join(fakeHome, ".claude.json"));
     expect(candidates).toHaveLength(1);
@@ -119,7 +133,9 @@ describe("restoring", () => {
     const result = restoreFromBackup(backup, target);
 
     expect(result.ok).toBe(true);
-    expect(JSON.parse(fs.readFileSync(target, "utf8"))).toEqual({ permissions: { allow: ["Bash(ls)"] } });
+    expect(JSON.parse(fs.readFileSync(target, "utf8"))).toEqual({
+      permissions: { allow: ["Bash(ls)"] },
+    });
     expect(result.backupOfBroken).not.toBeNull();
     expect(fs.readFileSync(result.backupOfBroken as string, "utf8")).toBe("{ broken,,, ");
   });

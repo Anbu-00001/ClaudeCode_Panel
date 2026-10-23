@@ -42,7 +42,9 @@ describe("resolvePaths", () => {
     expect(info.projectDir).toBe(info.gitRoot);
 
     const claudePaths = getClaudePaths(info);
-    expect(claudePaths.projectSettings).toBe(path.join(fs.realpathSync(repoDir), ".claude", "settings.json"));
+    expect(claudePaths.projectSettings).toBe(
+      path.join(fs.realpathSync(repoDir), ".claude", "settings.json"),
+    );
     expect(claudePaths.localSettings.startsWith(fs.realpathSync(nested))).toBe(false);
   });
 

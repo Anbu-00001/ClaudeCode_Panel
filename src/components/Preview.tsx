@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import React from "react";
 import type { KitPreview } from "../core/kits.js";
 
 /**
@@ -22,7 +21,7 @@ export function Preview({ preview }: { preview: KitPreview }) {
               {line.op === "create" ? "create" : line.op === "append" ? "add to" : "change"}
               {"   "}
               {line.displayPath}
-              {line.conflict ? <Text color="red">  ← something else is already here</Text> : null}
+              {line.conflict ? <Text color="red"> ← something else is already here</Text> : null}
             </Text>
             {line.note ? (
               <Text dimColor>

@@ -179,9 +179,7 @@ export function sweepStaleTempFiles(dirPath: string): string[] {
     try {
       fs.unlinkSync(path.join(dirPath, name));
       removed.push(name);
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return removed;
 }
@@ -281,7 +279,9 @@ export function serializeJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function readJsonForWrite(filePath: string):
+function readJsonForWrite(
+  filePath: string,
+):
   | { status: "ok"; value: Record<string, unknown>; existed: boolean }
   | { status: "unparseable"; failure: ParseFailure } {
   let raw: string;
@@ -338,7 +338,10 @@ export function fenceClose(id: string): string {
   return `<!-- /ccpanel:${id} -->`;
 }
 
-export function findFencedBlock(text: string, id: string): { start: number; end: number; body: string } | null {
+export function findFencedBlock(
+  text: string,
+  id: string,
+): { start: number; end: number; body: string } | null {
   const open = fenceOpen(id);
   const close = fenceClose(id);
   const start = text.indexOf(open);
@@ -404,7 +407,9 @@ export interface TransactionResult {
 }
 
 /** Applies one operation, returning the change record needed to reverse it. */
-function applyOperation(op: Operation): { ok: true; change: RecordedChange } | { ok: false; failure: WriteFailure } {
+function applyOperation(
+  op: Operation,
+): { ok: true; change: RecordedChange } | { ok: false; failure: WriteFailure } {
   switch (op.kind) {
     case "createFile": {
       const existed = fs.existsSync(op.filePath);
@@ -527,18 +532,42 @@ function applyOperation(op: Operation): { ok: true; change: RecordedChange } | {
       } as { mode?: number });
       return {
         ok: true,
-        change: { file: op.filePath, op: "append-block", key: op.blockId, backupPath, existedBefore: existed },
+        change: {
+          file: op.filePath,
+          op: "append-block",
+          key: op.blockId,
+          backupPath,
+          existedBefore: existed,
+        },
       };
     }
 
     case "removeBlock": {
       if (!fs.existsSync(op.filePath)) {
-        return { ok: true, change: { file: op.filePath, op: "remove-block", key: op.blockId, backupPath: null, existedBefore: false } };
+        return {
+          ok: true,
+          change: {
+            file: op.filePath,
+            op: "remove-block",
+            key: op.blockId,
+            backupPath: null,
+            existedBefore: false,
+          },
+        };
       }
       const existing = fs.readFileSync(op.filePath, "utf8");
       const found = findFencedBlock(existing, op.blockId);
       if (!found) {
-        return { ok: true, change: { file: op.filePath, op: "remove-block", key: op.blockId, backupPath: null, existedBefore: true } };
+        return {
+          ok: true,
+          change: {
+            file: op.filePath,
+            op: "remove-block",
+            key: op.blockId,
+            backupPath: null,
+            existedBefore: true,
+          },
+        };
       }
       const backupPath = snapshot(op.filePath);
       // Removes exactly the fenced region, so text above and below survives.
@@ -548,7 +577,13 @@ function applyOperation(op: Operation): { ok: true; change: RecordedChange } | {
       atomicWriteFile(op.filePath, next);
       return {
         ok: true,
-        change: { file: op.filePath, op: "remove-block", key: op.blockId, backupPath, existedBefore: true },
+        change: {
+          file: op.filePath,
+          op: "remove-block",
+          key: op.blockId,
+          backupPath,
+          existedBefore: true,
+        },
       };
     }
 

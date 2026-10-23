@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { daysSinceGenerated, groupByCategory, isStale, loadCommands, searchCommands } from "../src/core/commands.js";
+import {
+  daysSinceGenerated,
+  groupByCategory,
+  isStale,
+  loadCommands,
+  searchCommands,
+} from "../src/core/commands.js";
 import { loadExplain } from "../src/core/explain.js";
 import { getKit, loadKits } from "../src/core/kits.js";
 
@@ -19,7 +25,15 @@ describe("the command library (§11.2)", () => {
 
   it("contains no command that community lists invented", () => {
     // §11.2: a widely-shared "complete list" contains these; none exist.
-    const fabricated = ["/godmode", "/beastmode", "/ghost", "/punch", "/mirror", "/approve", "/skip"];
+    const fabricated = [
+      "/godmode",
+      "/beastmode",
+      "/ghost",
+      "/punch",
+      "/mirror",
+      "/approve",
+      "/skip",
+    ];
     const names = new Set(library.commands.map((c) => c.name.toLowerCase()));
     for (const fake of fabricated) expect(names.has(fake), `ships ${fake}`).toBe(false);
   });
@@ -33,7 +47,10 @@ describe("the command library (§11.2)", () => {
     for (const c of library.commands) {
       expect(c.plain.length, `${c.name}: "${c.plain}"`).toBeLessThanOrEqual(60);
       for (const jargon of ["token", "MCP", "subagent", "settings.json", "stdio"]) {
-        expect(c.plain.toLowerCase().includes(jargon.toLowerCase()), `${c.name} says ${jargon}`).toBe(false);
+        expect(
+          c.plain.toLowerCase().includes(jargon.toLowerCase()),
+          `${c.name} says ${jargon}`,
+        ).toBe(false);
       }
     }
   });
@@ -96,7 +113,10 @@ describe("the teaching content (§11.1)", () => {
   it("covers every rung of the ladder", () => {
     expect(entries.length).toBe(11);
     for (const id of ["helpers", "tools", "automaticChecks", "memory", "skills"]) {
-      expect(entries.some((e) => e.id === id), id).toBe(true);
+      expect(
+        entries.some((e) => e.id === id),
+        id,
+      ).toBe(true);
     }
   });
 
@@ -104,7 +124,10 @@ describe("the teaching content (§11.1)", () => {
     for (const e of entries) {
       for (const field of ["oneLine", "whatItIs", "whenYouWantIt", "example"] as const) {
         for (const sentence of e[field].split(/(?<=[.!?])\s+/)) {
-          expect(sentence.split(/\s+/).length, `${e.id}.${field}: "${sentence}"`).toBeLessThanOrEqual(20);
+          expect(
+            sentence.split(/\s+/).length,
+            `${e.id}.${field}: "${sentence}"`,
+          ).toBeLessThanOrEqual(20);
         }
       }
     }
@@ -113,7 +136,15 @@ describe("the teaching content (§11.1)", () => {
   it("never uses a word the reader would have to look up", () => {
     for (const e of entries) {
       const text = [e.oneLine, e.whatItIs, e.whenYouWantIt, e.example].join(" ").toLowerCase();
-      for (const jargon of ["mcp", "subagent", "frontmatter", "settings.json", "token", "scope", "json"]) {
+      for (const jargon of [
+        "mcp",
+        "subagent",
+        "frontmatter",
+        "settings.json",
+        "token",
+        "scope",
+        "json",
+      ]) {
         expect(text.includes(jargon), `${e.id} says "${jargon}"`).toBe(false);
       }
     }
@@ -147,11 +178,16 @@ describe("the kit Claude asked for", () => {
   it("exists and says why Claude wanted it", () => {
     expect(kit).toBeDefined();
     expect((kit as unknown as { chosenByClaude?: boolean }).chosenByClaude).toBe(true);
-    expect((kit as unknown as { whyClaudeWantsThis?: string }).whyClaudeWantsThis?.length ?? 0).toBeGreaterThan(80);
+    expect(
+      (kit as unknown as { whyClaudeWantsThis?: string }).whyClaudeWantsThis?.length ?? 0,
+    ).toBeGreaterThan(80);
   });
 
   it("hands problems back to Claude rather than to the user", () => {
-    const hook = fs.readFileSync(path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh"), "utf8");
+    const hook = fs.readFileSync(
+      path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh"),
+      "utf8",
+    );
     expect(hook).toContain("additionalContext");
     expect(hook).toContain("PostToolUse");
   });
@@ -164,8 +200,13 @@ describe("the kit Claude asked for", () => {
 
     const run = (f: string) =>
       execFileSync("bash", [hookPath], {
-        input: JSON.stringify({ tool_name: "Edit", cwd: tmp, tool_input: { file_path: path.join(tmp, f) } }),
-        encoding: "utf8", timeout: 20_000,
+        input: JSON.stringify({
+          tool_name: "Edit",
+          cwd: tmp,
+          tool_input: { file_path: path.join(tmp, f) },
+        }),
+        encoding: "utf8",
+        timeout: 20_000,
       });
 
     expect(run("gen.ts")).toContain("generated");
@@ -174,7 +215,10 @@ describe("the kit Claude asked for", () => {
   });
 
   it("never installs anything or guesses at a checker", () => {
-    const hook = fs.readFileSync(path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh"), "utf8");
+    const hook = fs.readFileSync(
+      path.join(projectRoot, "kits/own-mistakes/hooks/check-my-work.sh"),
+      "utf8",
+    );
     for (const forbidden of ["npm install", "pip install", "curl ", "apt install", "sudo "]) {
       expect(hook.includes(forbidden), `hook runs "${forbidden}"`).toBe(false);
     }

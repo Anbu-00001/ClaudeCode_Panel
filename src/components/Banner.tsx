@@ -1,6 +1,5 @@
-import { Box, Text } from "ink";
 import { createRequire } from "node:module";
-import React from "react";
+import { Box, Text } from "ink";
 
 const require = createRequire(import.meta.url);
 
@@ -93,6 +92,7 @@ export function Banner({
       <Box flexDirection="column" paddingX={1} marginBottom={1}>
         {WORDMARK_LINES.map((line, i) => (
           // The art is fixed, so the index is a stable identity here.
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed art, never reordered
           <Text key={i} color={color}>
             {line}
           </Text>

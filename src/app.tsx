@@ -1,15 +1,15 @@
 import { Box, Text, useStdout } from "ink";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Banner } from "./components/Banner.js";
 import { detectLadderState, type LadderState } from "./core/detect.js";
 import { type Kit, loadKits } from "./core/kits.js";
 import { Commands } from "./screens/Commands.js";
 import { Explore } from "./screens/Explore.js";
 import { KitDetail } from "./screens/KitDetail.js";
-import { Manage } from "./screens/Manage.js";
-import { Spending } from "./screens/Spending.js";
 import { Kits } from "./screens/Kits.js";
 import { Ladder } from "./screens/Ladder.js";
+import { Manage } from "./screens/Manage.js";
+import { Spending } from "./screens/Spending.js";
 
 type Screen =
   | { name: "ladder" }
@@ -103,8 +103,6 @@ export function App() {
 
     case "spending":
       return <Spending onBack={() => setScreen({ name: "ladder" })} />;
-
-    case "ladder":
     default:
       // The banner rides on the home screen only — that is what a boot lands
       // on, and repeating it above every screen would spend rows the lists

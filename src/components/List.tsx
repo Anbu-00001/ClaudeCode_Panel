@@ -1,5 +1,4 @@
 import { Box, Text, useInput } from "ink";
-import React from "react";
 
 export interface ListItem {
   key: string;
@@ -74,7 +73,8 @@ export function List({
               <Text color={active ? "cyan" : undefined}>{active ? "→ " : "  "}</Text>
               {item.control ? (
                 <Text color={item.control.color} bold={active}>
-                  {item.control.text.padEnd(controlWidth)}{"  "}
+                  {item.control.text.padEnd(controlWidth)}
+                  {"  "}
                 </Text>
               ) : null}
               <Text color={active ? "cyan" : undefined}>

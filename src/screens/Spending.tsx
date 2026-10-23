@@ -1,16 +1,16 @@
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import {
   ATTRIBUTION_LIMIT,
-  PERIODS,
-  PERIOD_LABEL,
-  PRIVACY_NOTE,
-  type Period,
-  type UsageOutcome,
   formatMoney,
   friendlyModel,
   getUsage,
+  PERIOD_LABEL,
+  PERIODS,
+  type Period,
+  PRIVACY_NOTE,
+  type UsageOutcome,
 } from "../core/ccusage.js";
 
 interface SpendingProps {

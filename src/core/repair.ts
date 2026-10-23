@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { type ClaudePaths, type RepoInfo, getClaudePaths } from "./paths.js";
+import { type ClaudePaths, getClaudePaths, type RepoInfo } from "./paths.js";
 import { validateByFilename } from "./validate.js";
-import { atomicWriteFile, backupsDir, describeParseError, snapshot, sweepStaleTempFiles } from "./write.js";
+import {
+  atomicWriteFile,
+  backupsDir,
+  describeParseError,
+  snapshot,
+  sweepStaleTempFiles,
+} from "./write.js";
 
 /**
  * Config health check and restore (§10.8). Runs on demand, and whenever a
@@ -151,9 +157,7 @@ export function findRestoreCandidates(filePath: string): RestoreCandidate[] {
         takenAt: parseCcpanelStamp(name),
         sizeBytes: fs.statSync(full).size,
       });
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   const theirs = claudeCodeBackupsDir();
@@ -174,9 +178,7 @@ export function findRestoreCandidates(filePath: string): RestoreCandidate[] {
         takenAt: parseClaudeCodeStamp(name),
         sizeBytes: fs.statSync(full).size,
       });
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   return out.sort((a, b) => (b.takenAt?.getTime() ?? 0) - (a.takenAt?.getTime() ?? 0));
@@ -197,7 +199,11 @@ export function restoreFromBackup(backupPath: string, targetPath: string): Resto
   try {
     raw = fs.readFileSync(backupPath, "utf8");
   } catch (err) {
-    return { ok: false, message: `Couldn't read that backup: ${(err as Error).message}`, backupOfBroken: null };
+    return {
+      ok: false,
+      message: `Couldn't read that backup: ${(err as Error).message}`,
+      backupOfBroken: null,
+    };
   }
 
   try {

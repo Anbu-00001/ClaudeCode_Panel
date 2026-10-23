@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { SearchBar } from "../components/SearchBar.js";

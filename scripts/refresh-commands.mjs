@@ -31,7 +31,13 @@ for (const line of text.split("\n")) {
   const m = /^\|\s*`(\/[^`]+)`\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
   if (!m) continue;
   const name = m[1].split(" ")[0];
-  live.set(name, m[2].replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/`([^`]*)`/g, "$1").trim());
+  live.set(
+    name,
+    m[2]
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/`([^`]*)`/g, "$1")
+      .trim(),
+  );
 }
 
 const added = [...live.keys()].filter((n) => !ours.has(n));
@@ -60,7 +66,7 @@ if (nowRemoved.length) {
 const needWording = current.commands.filter((c) => c.needsWording);
 if (needWording.length) {
   console.log(`${needWording.length} shipped commands still lack hand-written wording:`);
-  console.log("  " + needWording.map((c) => c.name).join(" ") + "\n");
+  console.log(`  ${needWording.map((c) => c.name).join(" ")}\n`);
 }
 
 if (!added.length && !gone.length && !nowRemoved.length && !needWording.length) {

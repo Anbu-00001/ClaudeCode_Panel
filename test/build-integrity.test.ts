@@ -31,7 +31,9 @@ describe("the built package", () => {
       console.log("ok");
     `;
     const out = execFileSync("node", ["--input-type=module", "-e", probe], {
-      cwd: root, encoding: "utf8", timeout: 60_000,
+      cwd: root,
+      encoding: "utf8",
+      timeout: 60_000,
     });
     expect(out.trim()).toBe("ok");
   }, 60_000);

@@ -90,7 +90,11 @@ export const defaultExec: ExecRunner = (file, args, options = {}) =>
         // A command that isn't installed is an ordinary answer here, not a
         // crash — plenty of skills reference a tool the user never installed.
         const failure: ExecResult["failure"] =
-          err.code === "ENOENT" ? "missing" : err.killed === true || err.signal ? "timeout" : "error";
+          err.code === "ENOENT"
+            ? "missing"
+            : err.killed === true || err.signal
+              ? "timeout"
+              : "error";
         resolve({
           ok: false,
           code: typeof err.code === "number" ? err.code : null,
@@ -109,7 +113,8 @@ export const defaultExec: ExecRunner = (file, args, options = {}) =>
 /** 1 to 4 numeric parts. Anything else is not a version we can reason about. */
 const CORE_PATTERN = /^\d+(?:\.\d+){0,3}$/;
 /** A version-looking run inside arbitrary output: `sometool 1.2.3`, `v2.0.0-rc.1`. */
-const VERSION_IN_TEXT = /(?:^|[^\w.-])v?(\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)(?![\w.-])/;
+const VERSION_IN_TEXT =
+  /(?:^|[^\w.-])v?(\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)(?![\w.-])/;
 
 interface ParsedVersion {
   core: number[];
@@ -435,7 +440,11 @@ interface InstalledPluginRecord {
   lastUpdated: string | null;
 }
 
-function readInstalledPlugin(home: string, pluginId: string, skillPath: string): InstalledPluginRecord | null {
+function readInstalledPlugin(
+  home: string,
+  pluginId: string,
+  skillPath: string,
+): InstalledPluginRecord | null {
   const file = path.join(home, ".claude", "plugins", "installed_plugins.json");
   const plugins = asRecord(asRecord(readJsonFile(file))?.["plugins"]);
   const installs = plugins?.[pluginId];
@@ -456,7 +465,9 @@ function readInstalledPlugin(home: string, pluginId: string, skillPath: string):
 
   // The same bundle can be installed at several scopes; prefer the copy this
   // skill actually came out of.
-  const owning = records.find((r) => r.installPath !== null && skillPath.startsWith(r.installPath + path.sep));
+  const owning = records.find(
+    (r) => r.installPath !== null && skillPath.startsWith(r.installPath + path.sep),
+  );
   return owning ?? records[0] ?? null;
 }
 
@@ -467,7 +478,9 @@ interface CatalogEntry {
 }
 
 function readCatalogEntry(home: string, marketplace: string, pluginName: string): CatalogEntry {
-  const known = asRecord(readJsonFile(path.join(home, ".claude", "plugins", "known_marketplaces.json")));
+  const known = asRecord(
+    readJsonFile(path.join(home, ".claude", "plugins", "known_marketplaces.json")),
+  );
   const installLocation = asString(asRecord(known?.[marketplace])?.["installLocation"]);
   if (!installLocation) return { version: null, ref: null, found: false };
 
@@ -498,9 +511,10 @@ function checkPlugin(
   const marketplace = at > 0 ? pluginId.slice(at + 1) : "";
 
   const installed = readInstalledPlugin(options.home, pluginId, skill.filePath);
-  const catalog = marketplace === ""
-    ? { version: null, ref: null, found: false }
-    : readCatalogEntry(options.home, marketplace, pluginName);
+  const catalog =
+    marketplace === ""
+      ? { version: null, ref: null, found: false }
+      : readCatalogEntry(options.home, marketplace, pluginName);
 
   const installedVersion = installed?.version ?? null;
   const catalogVersion = catalog.version;
@@ -615,7 +629,8 @@ async function gitText(
 }
 
 async function readLastFetch(exec: ExecRunner, repoRoot: string): Promise<Date | null> {
-  const gitDir = (await gitText(exec, repoRoot, ["rev-parse", "--absolute-git-dir"])) ??
+  const gitDir =
+    (await gitText(exec, repoRoot, ["rev-parse", "--absolute-git-dir"])) ??
     path.join(repoRoot, ".git");
   const stats = statOrNull(path.join(gitDir, "FETCH_HEAD"));
   return stats ? stats.mtime : null;
@@ -671,7 +686,10 @@ async function checkGit(
   let status: UpdateStatus = "unknown";
   let summary = "Can't tell";
   let detail: string;
-  const where = repoRoot === dir ? "This skill is a git clone" : `This skill lives in the git repo at ${repoRoot}`;
+  const where =
+    repoRoot === dir
+      ? "This skill is a git clone"
+      : `This skill lives in the git repo at ${repoRoot}`;
   const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
 
   if (!upstream) {
@@ -700,7 +718,8 @@ async function checkGit(
     detail += ` You have ${ahead} local commit${ahead === 1 ? "" : "s"} of your own.`;
   }
   if (dirty === true) {
-    detail += " There are uncommitted changes here, so a pull may refuse until they are dealt with.";
+    detail +=
+      " There are uncommitted changes here, so a pull may refuse until they are dealt with.";
   }
 
   return {
@@ -746,7 +765,8 @@ export async function fetchGitRemote(
   const result = await resolved.exec("git", argv.slice(1), { timeoutMs: FETCH_TIMEOUT_MS });
   if (result.ok) return { ok: true, argv, message: "Checked the remote." };
   if (result.failure === "missing") return { ok: false, argv, message: "git isn't installed." };
-  if (result.failure === "timeout") return { ok: false, argv, message: "The remote didn't answer in time." };
+  if (result.failure === "timeout")
+    return { ok: false, argv, message: "The remote didn't answer in time." };
   const reason = (result.stderr.trim() || result.stdout.trim()).split("\n")[0] ?? "git refused.";
   return { ok: false, argv, message: reason };
 }
@@ -940,9 +960,7 @@ function checkManual(
   const fileStats = statOrNull(skill.filePath);
   const dirStats = statOrNull(dir);
   const times = [fileStats?.mtime, dirStats?.mtime].filter((d): d is Date => d instanceof Date);
-  const lastModified = times.length
-    ? times.reduce((newest, d) => (d > newest ? d : newest))
-    : null;
+  const lastModified = times.length ? times.reduce((newest, d) => (d > newest ? d : newest)) : null;
 
   let detail = `Nothing on this computer records where this skill came from — it isn't part of an installed bundle, it isn't a git clone, and there's no version file next to it. It lives in ${dir}`;
   detail += lastModified
@@ -957,7 +975,9 @@ function checkManual(
     dir,
     method: "manual",
     status: "unknown",
-    summary: lastModified ? `No update path — last changed ${formatDay(lastModified)}` : "No update path",
+    summary: lastModified
+      ? `No update path — last changed ${formatDay(lastModified)}`
+      : "No update path",
     detail,
     command: null,
     lastModified,

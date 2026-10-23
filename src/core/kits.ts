@@ -4,15 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { RungId } from "./detect.js";
-import { type ClaudePaths, type RepoInfo, getClaudePaths } from "./paths.js";
+import { type ClaudePaths, getClaudePaths, type RepoInfo } from "./paths.js";
 import {
   DEFAULT_CONTENT_MODE,
   EXECUTABLE_MODE,
+  isExecutable,
   type Operation,
   type RecordedChange,
-  type TransactionResult,
-  isExecutable,
   runTransaction,
+  type TransactionResult,
 } from "./write.js";
 
 /**
@@ -191,7 +191,7 @@ function settingsPathForScope(paths: ClaudePaths, scope: "project" | "local" | "
   return paths.projectSettings;
 }
 
-export function targetPathFor(kit: Kit, entry: InstallEntry, repo: RepoInfo): string {
+export function targetPathFor(_kit: Kit, entry: InstallEntry, repo: RepoInfo): string {
   const paths = getClaudePaths(repo);
   switch (entry.kind) {
     case "settings":
@@ -244,7 +244,8 @@ function settingsPatchApplied(filePath: string, patch: Record<string, unknown>):
         for (const ourEntry of entries) {
           const command = extractCommand(ourEntry);
           const matcher = matcherOf(ourEntry);
-          if (command && !(have as unknown[]).some((e) => isOurHookEntry(e, command, matcher))) return false;
+          if (command && !(have as unknown[]).some((e) => isOurHookEntry(e, command, matcher)))
+            return false;
         }
       }
       continue;
@@ -426,7 +427,12 @@ function buildOperations(kit: Kit, repo: RepoInfo, mode: "install" | "uninstall"
     if (entry.kind === "claudemd") {
       ops.push(
         mode === "install"
-          ? { kind: "appendBlock", filePath: absolutePath, blockId: entry.blockId, content: entry.content }
+          ? {
+              kind: "appendBlock",
+              filePath: absolutePath,
+              blockId: entry.blockId,
+              content: entry.content,
+            }
           : { kind: "removeBlock", filePath: absolutePath, blockId: entry.blockId },
       );
       continue;
@@ -487,12 +493,16 @@ function applySettingsPatch(
 
       for (const [eventName, eventEntries] of Object.entries(topValue as Record<string, unknown>)) {
         if (!Array.isArray(eventEntries)) continue;
-        const current = Array.isArray(nextHooks[eventName]) ? [...(nextHooks[eventName] as unknown[])] : [];
+        const current = Array.isArray(nextHooks[eventName])
+          ? [...(nextHooks[eventName] as unknown[])]
+          : [];
 
         for (const ourEntry of eventEntries) {
           const command = extractCommand(ourEntry);
           const matcher = matcherOf(ourEntry);
-          const withoutOurs = current.filter((e) => !(command && isOurHookEntry(e, command, matcher)));
+          const withoutOurs = current.filter(
+            (e) => !(command && isOurHookEntry(e, command, matcher)),
+          );
           current.length = 0;
           current.push(...withoutOurs);
           if (mode === "install") current.push(ourEntry);
@@ -545,25 +555,39 @@ function extractCommand(entry: unknown): string | null {
 export function installKit(
   kit: Kit,
   repo: RepoInfo,
-  recordUndo?: (meta: { kind: string; id: string; label: string }, changes: RecordedChange[]) => void,
+  recordUndo?: (
+    meta: { kind: string; id: string; label: string },
+    changes: RecordedChange[],
+  ) => void,
 ): TransactionResult {
-  return runTransaction(buildOperations(kit, repo, "install"), {
-    kind: "kit",
-    id: kit.id,
-    label: `Set up: ${kit.title}`,
-  }, recordUndo);
+  return runTransaction(
+    buildOperations(kit, repo, "install"),
+    {
+      kind: "kit",
+      id: kit.id,
+      label: `Set up: ${kit.title}`,
+    },
+    recordUndo,
+  );
 }
 
 export function uninstallKit(
   kit: Kit,
   repo: RepoInfo,
-  recordUndo?: (meta: { kind: string; id: string; label: string }, changes: RecordedChange[]) => void,
+  recordUndo?: (
+    meta: { kind: string; id: string; label: string },
+    changes: RecordedChange[],
+  ) => void,
 ): TransactionResult {
-  return runTransaction(buildOperations(kit, repo, "uninstall"), {
-    kind: "kit-uninstall",
-    id: kit.id,
-    label: `Removed: ${kit.title}`,
-  }, recordUndo);
+  return runTransaction(
+    buildOperations(kit, repo, "uninstall"),
+    {
+      kind: "kit-uninstall",
+      id: kit.id,
+      label: `Removed: ${kit.title}`,
+    },
+    recordUndo,
+  );
 }
 
 /** True when every file the kit installs is present (§9.3, acceptance #11). */
@@ -619,12 +643,14 @@ function anySettingsHasDisableAllHooks(repo: RepoInfo): boolean {
   for (const file of [paths.userSettings, paths.projectSettings, paths.localSettings]) {
     try {
       const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (typeof parsed === "object" && parsed !== null && (parsed as Record<string, unknown>)["disableAllHooks"] === true) {
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        (parsed as Record<string, unknown>)["disableAllHooks"] === true
+      ) {
         return true;
       }
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return false;
 }
@@ -634,9 +660,7 @@ function hasJsonParser(): boolean {
     try {
       execFileSync("command", ["-v", bin], { stdio: "ignore", shell: "/bin/bash", timeout: 1000 });
       return true;
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return false;
 }
@@ -669,14 +693,18 @@ export function verifyDeletionWarning(kit: Kit, repo: RepoInfo): VerifyResult {
   checks.push({
     ok: parser,
     label: "Your computer can read the checks",
-    detail: parser ? null : "This needs jq, node or python3 installed. Without one, it stays silent.",
+    detail: parser
+      ? null
+      : "This needs jq, node or python3 installed. Without one, it stays silent.",
   });
 
   const hooksOff = anySettingsHasDisableAllHooks(repo);
   checks.push({
     ok: !hooksOff,
     label: "Automatic checks are switched on",
-    detail: hooksOff ? "Something in your setup turns off all automatic checks, so this can't run." : null,
+    detail: hooksOff
+      ? "Something in your setup turns off all automatic checks, so this can't run."
+      : null,
   });
 
   let fired = false;

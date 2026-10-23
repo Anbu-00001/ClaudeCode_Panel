@@ -76,7 +76,9 @@ export function searchCommands(library: CommandLibrary, query: string): CommandE
     .map((s) => s.entry);
 }
 
-export function groupByCategory(library: CommandLibrary): Array<{ category: string; commands: CommandEntry[] }> {
+export function groupByCategory(
+  library: CommandLibrary,
+): Array<{ category: string; commands: CommandEntry[] }> {
   return library.categories
     .map((category) => ({
       category,

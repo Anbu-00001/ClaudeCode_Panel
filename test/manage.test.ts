@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maskText } from "../src/core/mask.js";
 import { resolvePaths } from "../src/core/paths.js";
-import { STATE_CYCLE, STATE_LABEL, listSkills, nextState, readFrontmatter, stateOf } from "../src/core/skills.js";
+import { listSkills, nextState, STATE_CYCLE, STATE_LABEL, stateOf } from "../src/core/skills.js";
 import {
   setConnectorsEnabled,
   setPluginEnabled,
@@ -14,7 +15,6 @@ import {
 } from "../src/core/toggles.js";
 import { connectorsDisabled, listTools, projectConfigKey } from "../src/core/tools.js";
 import { readUndoLogNewestFirst } from "../src/core/undo.js";
-import { maskText } from "../src/core/mask.js";
 import { runTransaction, serializeJson } from "../src/core/write.js";
 
 vi.mock("node:os", async (importOriginal) => {
@@ -48,8 +48,11 @@ function makeSkill(dir: string, name: string, frontmatter: string, body = "do th
 
 describe("finding abilities", () => {
   it("reads name and description from the frontmatter", () => {
-    makeSkill(path.join(repoDir, ".claude", "skills"), "deploy",
-      'name: deploy\ndescription: Ship the app to production. Use when releasing.');
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "deploy",
+      "name: deploy\ndescription: Ship the app to production. Use when releasing.",
+    );
     const skills = listSkills(repo());
     expect(skills).toHaveLength(1);
     expect(skills[0]?.name).toBe("deploy");
@@ -66,15 +69,27 @@ describe("finding abilities", () => {
   });
 
   it("handles a description containing a colon, which naive parsing breaks on", () => {
-    makeSkill(path.join(repoDir, ".claude", "skills"), "note",
-      'name: note\ndescription: "Use this: it handles colons, quotes and commas"');
-    expect(listSkills(repo())[0]?.description).toBe("Use this: it handles colons, quotes and commas");
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "note",
+      'name: note\ndescription: "Use this: it handles colons, quotes and commas"',
+    );
+    expect(listSkills(repo())[0]?.description).toBe(
+      "Use this: it handles colons, quotes and commas",
+    );
   });
 
   it("reports how much of Claude's memory each one costs, in words not money", () => {
-    makeSkill(path.join(repoDir, ".claude", "skills"), "tiny", "name: tiny\ndescription: Short one.");
-    makeSkill(path.join(repoDir, ".claude", "skills"), "huge",
-      `name: huge\ndescription: ${"a very long description ".repeat(30)}`);
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "tiny",
+      "name: tiny\ndescription: Short one.",
+    );
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "huge",
+      `name: huge\ndescription: ${"a very long description ".repeat(30)}`,
+    );
     const skills = listSkills(repo());
     expect(skills.find((s) => s.name === "tiny")?.weight).toBe("a little");
     expect(skills.find((s) => s.name === "huge")?.weight).toBe("a lot");
@@ -82,15 +97,22 @@ describe("finding abilities", () => {
   });
 
   it("notices a skill that already only runs when asked", () => {
-    makeSkill(path.join(repoDir, ".claude", "skills"), "commit",
-      "name: commit\ndescription: Write a message.\ndisable-model-invocation: true");
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "commit",
+      "name: commit\ndescription: Write a message.\ndisable-model-invocation: true",
+    );
     expect(listSkills(repo())[0]?.disablesModelInvocation).toBe(true);
   });
 });
 
 describe("acceptance #8: an ability cycles all four states", () => {
   beforeEach(() => {
-    makeSkill(path.join(repoDir, ".claude", "skills"), "deploy", "name: deploy\ndescription: Ship it.");
+    makeSkill(
+      path.join(repoDir, ".claude", "skills"),
+      "deploy",
+      "name: deploy\ndescription: Ship it.",
+    );
   });
 
   it("writes the right value for each state, and starts at on", () => {
@@ -127,7 +149,10 @@ describe("acceptance #8: an ability cycles all four states", () => {
 
   it("leaves unrelated settings untouched", () => {
     fs.mkdirSync(path.dirname(localSettings()), { recursive: true });
-    fs.writeFileSync(localSettings(), serializeJson({ permissions: { allow: ["Bash(ls)"] }, mine: 1 }));
+    fs.writeFileSync(
+      localSettings(),
+      serializeJson({ permissions: { allow: ["Bash(ls)"] }, mine: 1 }),
+    );
     setSkillState(repo(), "deploy", "off");
     const after = readLocal();
     expect(after.permissions.allow).toEqual(["Bash(ls)"]);
@@ -145,10 +170,16 @@ describe("acceptance #8: an ability cycles all four states", () => {
 
 describe("acceptance #9: things we cannot honestly switch", () => {
   beforeEach(() => {
-    fs.writeFileSync(path.join(repoDir, ".mcp.json"),
-      serializeJson({ mcpServers: { playwright: { command: "npx", args: ["-y", "@playwright/mcp"] } } }));
-    fs.writeFileSync(path.join(fakeHome, ".claude.json"),
-      serializeJson({ mcpServers: { serena: { command: "serena", args: ["start"] } } }));
+    fs.writeFileSync(
+      path.join(repoDir, ".mcp.json"),
+      serializeJson({
+        mcpServers: { playwright: { command: "npx", args: ["-y", "@playwright/mcp"] } },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude.json"),
+      serializeJson({ mcpServers: { serena: { command: "serena", args: ["start"] } } }),
+    );
   });
 
   /**
@@ -285,10 +316,19 @@ describe("bundled abilities are not ours to switch", () => {
   it("marks a plugin skill unswitchable and points at /plugin", () => {
     const install = path.join(fakeHome, ".claude", "plugins", "cache", "mk", "demo", "1.0.0");
     fs.mkdirSync(path.join(install, "skills"), { recursive: true });
-    makeSkill(path.join(install, "skills"), "bundled", "name: bundled\ndescription: From a bundle.");
+    makeSkill(
+      path.join(install, "skills"),
+      "bundled",
+      "name: bundled\ndescription: From a bundle.",
+    );
     fs.mkdirSync(path.join(fakeHome, ".claude", "plugins"), { recursive: true });
-    fs.writeFileSync(path.join(fakeHome, ".claude", "plugins", "installed_plugins.json"),
-      serializeJson({ version: 2, plugins: { "demo@mk": [{ scope: "user", installPath: install }] } }));
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude", "plugins", "installed_plugins.json"),
+      serializeJson({
+        version: 2,
+        plugins: { "demo@mk": [{ scope: "user", installPath: install }] },
+      }),
+    );
 
     const skill = listSkills(repo()).find((s) => s.name === "bundled");
     expect(skill?.source).toBe("plugin");
@@ -299,9 +339,14 @@ describe("bundled abilities are not ours to switch", () => {
 
 describe("secrets never reach the screen", () => {
   it("masks a credential in a tool's start command", () => {
-    fs.writeFileSync(path.join(repoDir, ".mcp.json"), serializeJson({
-      mcpServers: { db: { command: "npx", args: ["-y", "srv", "--token", "sk-ant-secret123456"] } },
-    }));
+    fs.writeFileSync(
+      path.join(repoDir, ".mcp.json"),
+      serializeJson({
+        mcpServers: {
+          db: { command: "npx", args: ["-y", "srv", "--token", "sk-ant-secret123456"] },
+        },
+      }),
+    );
     const tool = listTools(repo()).find((t) => t.name === "db");
     expect(maskText(tool?.summary ?? "")).not.toContain("sk-ant-secret123456");
   });

@@ -1,7 +1,6 @@
-import { render } from "ink-testing-library";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import React from "react";
+import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
 import type { LadderState, RungId } from "../src/core/detect.js";
 import { loadKits } from "../src/core/kits.js";
@@ -75,7 +74,14 @@ describe("Ladder screen", () => {
 
   it("never shows a config key, file path, or jargon term in the main view", () => {
     const frame = renderLadder(["instructions"]).lastFrame() ?? "";
-    for (const banned of ["settings.json", "skillOverrides", "MCP", "subagent", ".claude/", "PreToolUse"]) {
+    for (const banned of [
+      "settings.json",
+      "skillOverrides",
+      "MCP",
+      "subagent",
+      ".claude/",
+      "PreToolUse",
+    ]) {
       expect(frame).not.toContain(banned);
     }
   });

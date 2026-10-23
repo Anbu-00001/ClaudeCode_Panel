@@ -2,7 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { appendUndoEntry, readUndoLog, readUndoLogNewestFirst, revertEntry, undoLogPath } from "../src/core/undo.js";
+import {
+  appendUndoEntry,
+  readUndoLog,
+  readUndoLogNewestFirst,
+  revertEntry,
+  undoLogPath,
+} from "../src/core/undo.js";
 import { runTransaction, serializeJson } from "../src/core/write.js";
 
 vi.mock("node:os", async (importOriginal) => {
@@ -25,12 +31,21 @@ afterEach(() => {
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
-const meta = { kind: "kit", id: "code-reviewer", label: "Set up: Claude reviews your code before you commit" };
+const meta = {
+  kind: "kit",
+  id: "code-reviewer",
+  label: "Set up: Claude reviews your code before you commit",
+};
 
 describe("undo log (§12.3)", () => {
   it("appends one entry per install and reads it back", () => {
     appendUndoEntry(meta, [
-      { file: "/x/.claude/agents/reviewer.md", op: "create", backupPath: null, existedBefore: false },
+      {
+        file: "/x/.claude/agents/reviewer.md",
+        op: "create",
+        backupPath: null,
+        existedBefore: false,
+      },
     ]);
     const entries = readUndoLog();
     expect(entries).toHaveLength(1);
@@ -92,7 +107,11 @@ describe("undo log (§12.3)", () => {
 
   it("reverting a created file deletes it", () => {
     const created = path.join(workDir, "agents", "reviewer.md");
-    runTransaction([{ kind: "createFile", filePath: created, contents: "hi\n" }], meta, appendUndoEntry);
+    runTransaction(
+      [{ kind: "createFile", filePath: created, contents: "hi\n" }],
+      meta,
+      appendUndoEntry,
+    );
     expect(fs.existsSync(created)).toBe(true);
 
     revertEntry(readUndoLogNewestFirst()[0]?.uid as string);

@@ -89,9 +89,7 @@ function discoverTranscripts(dir: string): Transcript[] {
         filePath,
         mtimeMs: fs.statSync(filePath).mtimeMs,
       });
-    } catch {
-      continue; // vanished between readdir and stat — not fatal, just not counted
-    }
+    } catch {}
   }
 
   // Newest first. mtime is the cheap proxy for "most recent session": a live
@@ -195,7 +193,10 @@ async function processFile(filePath: string, acc: Accumulator): Promise<boolean>
   }
 }
 
-async function buildReport(dir: string, pick: (all: Transcript[]) => Transcript[]): Promise<UsageReport> {
+async function buildReport(
+  dir: string,
+  pick: (all: Transcript[]) => Transcript[],
+): Promise<UsageReport> {
   const all = discoverTranscripts(dir);
   const targets = pick(all);
 
@@ -216,11 +217,17 @@ async function buildReport(dir: string, pick: (all: Transcript[]) => Transcript[
 }
 
 /** Every tool call recorded for this folder, across every session on disk. */
-export async function readFolderUsage(repo: RepoInfo, options?: UsageOptions): Promise<UsageReport> {
+export async function readFolderUsage(
+  repo: RepoInfo,
+  options?: UsageOptions,
+): Promise<UsageReport> {
   return buildReport(resolveTranscriptDir(repo, options), (all) => all);
 }
 
 /** Same shape, narrowed to whichever transcript was written to most recently. */
-export async function readSessionUsage(repo: RepoInfo, options?: UsageOptions): Promise<UsageReport> {
+export async function readSessionUsage(
+  repo: RepoInfo,
+  options?: UsageOptions,
+): Promise<UsageReport> {
   return buildReport(resolveTranscriptDir(repo, options), (all) => (all[0] ? [all[0]] : []));
 }

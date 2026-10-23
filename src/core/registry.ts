@@ -36,7 +36,9 @@ const registryServerSchema = z.looseObject({
   description: z.string().optional(),
   title: z.string().optional(),
   version: z.string().optional(),
-  repository: z.looseObject({ url: z.string().optional(), source: z.string().optional() }).optional(),
+  repository: z
+    .looseObject({ url: z.string().optional(), source: z.string().optional() })
+    .optional(),
   websiteUrl: z.string().optional(),
   packages: z.array(z.unknown()).optional(),
   remotes: z.array(z.unknown()).optional(),
@@ -49,7 +51,9 @@ const registryResponseSchema = z.looseObject({
       _meta: z.record(z.string(), z.unknown()).optional(),
     }),
   ),
-  metadata: z.looseObject({ nextCursor: z.string().optional(), count: z.number().optional() }).optional(),
+  metadata: z
+    .looseObject({ nextCursor: z.string().optional(), count: z.number().optional() })
+    .optional(),
 });
 
 export interface ToolResult {
@@ -130,7 +134,9 @@ async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
 function metaOf(entry: { _meta?: Record<string, unknown> }): Record<string, unknown> {
   const meta = entry._meta ?? {};
   const official = meta["io.modelcontextprotocol.registry/official"];
-  return typeof official === "object" && official !== null ? (official as Record<string, unknown>) : {};
+  return typeof official === "object" && official !== null
+    ? (official as Record<string, unknown>)
+    : {};
 }
 
 function scoreOf(result: Omit<ToolResult, "score">, query: string): number {
@@ -187,7 +193,11 @@ export async function searchTools(query: string, signal?: AbortSignal): Promise<
 
   const parsed = registryResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    return { ok: false, results: [], message: "The list of tools came back in a form we didn't expect." };
+    return {
+      ok: false,
+      results: [],
+      message: "The list of tools came back in a form we didn't expect.",
+    };
   }
 
   // The registry returns one row per published version; keep the newest of each.
@@ -216,7 +226,9 @@ export async function searchTools(query: string, signal?: AbortSignal): Promise<
     }
   }
 
-  const results = [...byName.values()].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const results = [...byName.values()].sort(
+    (a, b) => b.score - a.score || a.name.localeCompare(b.name),
+  );
   return {
     ok: true,
     results,
@@ -240,7 +252,10 @@ function parseGitHubRepo(url: string): { owner: string; repo: string } | null {
  * is displayed as "not known", never as zero: showing 0 stars for a popular
  * project because a quota ran out would be worse than showing nothing.
  */
-export async function fetchStars(repositoryUrl: string | null, signal?: AbortSignal): Promise<number | null> {
+export async function fetchStars(
+  repositoryUrl: string | null,
+  signal?: AbortSignal,
+): Promise<number | null> {
   if (!repositoryUrl) return null;
   if (starCache.has(repositoryUrl)) return starCache.get(repositoryUrl) ?? null;
 

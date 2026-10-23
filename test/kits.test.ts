@@ -141,7 +141,9 @@ describe("install and uninstall", () => {
     const un = uninstallKit(kit(), repo(), appendUndoEntry);
     expect(un.ok).toBe(true);
 
-    expect(fs.existsSync(path.join(repoDir, ".claude", "hooks", "warn-before-delete.sh"))).toBe(false);
+    expect(fs.existsSync(path.join(repoDir, ".claude", "hooks", "warn-before-delete.sh"))).toBe(
+      false,
+    );
 
     const after = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
     expect(after.permissions.allow).toEqual(["Bash(ls)"]);
@@ -156,7 +158,9 @@ describe("install and uninstall", () => {
     fs.writeFileSync(
       settingsPath,
       serializeJson({
-        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "theirs.sh" }] }] },
+        hooks: {
+          PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "theirs.sh" }] }],
+        },
       }),
     );
 
@@ -188,7 +192,9 @@ describe("install and uninstall", () => {
     expect(result.failure?.reason).toBe("unparseable");
     expect(fs.readFileSync(settingsPath)).toEqual(before);
     // The script created in step 1 must be gone again.
-    expect(fs.existsSync(path.join(repoDir, ".claude", "hooks", "warn-before-delete.sh"))).toBe(false);
+    expect(fs.existsSync(path.join(repoDir, ".claude", "hooks", "warn-before-delete.sh"))).toBe(
+      false,
+    );
     expect(readUndoLogNewestFirst()).toHaveLength(0);
   });
 });
@@ -228,7 +234,9 @@ describe("post-install self-check (§9.5)", () => {
     const verify = verifyDeletionWarning(kit(), repo());
 
     expect(verify.ok).toBe(false);
-    expect(verify.checks.find((c) => c.label === "Automatic checks are switched on")?.ok).toBe(false);
+    expect(verify.checks.find((c) => c.label === "Automatic checks are switched on")?.ok).toBe(
+      false,
+    );
   });
 
   it("reports a missing file rather than claiming success", () => {

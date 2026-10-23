@@ -4,7 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KIT_ORDER, getKit, installKit, isKitInstalled, loadKits, previewKit, uninstallKit } from "../src/core/kits.js";
+import {
+  getKit,
+  installKit,
+  isKitInstalled,
+  KIT_ORDER,
+  loadKits,
+  previewKit,
+  uninstallKit,
+} from "../src/core/kits.js";
 import { resolvePaths } from "../src/core/paths.js";
 import { appendUndoEntry } from "../src/core/undo.js";
 import { serializeJson } from "../src/core/write.js";
@@ -81,7 +89,9 @@ describe("code-reviewer: the files-only install path", () => {
     expect(fs.existsSync(path.join(repoDir, ".claude", "agents", "reviewer.md"))).toBe(true);
     expect(fs.existsSync(path.join(repoDir, ".claude", "skills", "check", "SKILL.md"))).toBe(true);
 
-    const local = JSON.parse(fs.readFileSync(path.join(repoDir, ".claude", "settings.local.json"), "utf8"));
+    const local = JSON.parse(
+      fs.readFileSync(path.join(repoDir, ".claude", "settings.local.json"), "utf8"),
+    );
     expect(local.permissions.allow).toContain("Bash(git diff *)");
   });
 
@@ -93,7 +103,10 @@ describe("code-reviewer: the files-only install path", () => {
   });
 
   it("ships a skill that only the user can trigger, since it costs tokens", () => {
-    const text = fs.readFileSync(path.join(KITS, "code-reviewer", "skills", "check", "SKILL.md"), "utf8");
+    const text = fs.readFileSync(
+      path.join(KITS, "code-reviewer", "skills", "check", "SKILL.md"),
+      "utf8",
+    );
     expect(text).toMatch(/^name: check$/m);
     expect(text).toMatch(/^disable-model-invocation: true$/m);
   });

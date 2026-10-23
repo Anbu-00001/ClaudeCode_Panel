@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type ClaudePaths, type RepoInfo, getClaudePaths, resolvePaths } from "./paths.js";
+import { type ClaudePaths, getClaudePaths, type RepoInfo, resolvePaths } from "./paths.js";
 
 export type RungId =
   | "instructions"
