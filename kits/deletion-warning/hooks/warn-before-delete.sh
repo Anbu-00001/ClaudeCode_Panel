@@ -13,7 +13,10 @@
 #      then there is no safety feature at all.
 #   2. NO NETWORK, NO AI. Pattern matching plus git. That is why it can run on
 #      every tool call without costing anything.
-#   3. FAST. Everything is bounded; the whole script is capped well under 200ms.
+#   3. FAST. Everything is bounded, and on a normal repo the whole script
+#      finishes well under 200ms. Git alone may take up to 2s on a slow disk:
+#      cutting it off sooner used to turn "git didn't answer" into "all of it
+#      is saved in git", and a wrong reassurance is worse than a short wait.
 #
 # We reply with permissionDecision "ask", never "deny". We are warning, not
 # policing — the user stays in charge. "deny" also makes Claude stop and go
@@ -27,8 +30,10 @@ umask 077
 trap 'exit 0' ERR
 
 MAX_INPUT_BYTES=1000000   # ignore anything past 1MB; a real tool call is tiny
-GIT_TIMEOUT=0.1           # each git call is individually bounded
+GIT_TIMEOUT=2             # each git call is individually bounded
+FIND_TIMEOUT=0.5          # counting files gives up after this long
 FIND_LIMIT=5000           # stop counting files past this
+MAX_PARSE_CHARS=8192      # longer commands aren't read word by word
 
 # ---------------------------------------------------------------------------
 # Read input, bounded so a huge payload can't hang or exhaust memory.
@@ -136,29 +141,86 @@ is_ignorable_path() {
   return 1
 }
 
+# Runs a command with a time limit. `timeout` is GNU coreutils, which macOS
+# doesn't ship (Homebrew names it gtimeout), so without either the command
+# runs unbounded rather than not at all — a check that silently never runs
+# is how a safety tool ends up claiming everything is fine.
+bounded() {
+  local limit="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$limit" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$limit" "$@"
+  else
+    "$@"
+  fi
+}
+
+# git, with the repository's own config unable to run programs: the user may
+# be working in a clone a stranger wrote the .git/config for.
+safe_git() {
+  GIT_CONFIG_NOSYSTEM=1 GIT_LITERAL_PATHSPECS=1 bounded "$GIT_TIMEOUT" \
+    git -c core.fsmonitor= -c core.hooksPath=/dev/null "$@"
+}
+
 # Anything git already ignores is build output by definition.
 is_git_ignored() {
   command -v git >/dev/null 2>&1 || return 1
-  timeout "$GIT_TIMEOUT" git check-ignore -q -- "$1" 2>/dev/null
+  safe_git check-ignore -q -- "$1" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
 # Git awareness — the sentence that actually stops a bad approval.
+#
+# "Nothing unsaved" is only ever said after git has actually answered. Not a
+# repo, git missing, or git too slow each mean we don't know, and the user
+# must hear that rather than a reassurance we can't back up.
 # ---------------------------------------------------------------------------
+
+# Prints, for one existing path, how many of its files have changes git
+# hasn't saved (a number), "nogit" when it isn't inside a git work tree at
+# all, or "unknown" when git couldn't answer.
+unsaved_in() {
+  local p="$1" dir out rc
+  command -v git >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  if [ -d "$p" ]; then dir="$p"; else dir=$(dirname -- "$p"); fi
+
+  out=$(safe_git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null)
+  rc=$?
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then printf 'unknown'; return 0; fi
+  [ "$out" = "true" ] || { printf 'nogit'; return 0; }
+
+  out=$(safe_git -C "$dir" status --porcelain --untracked-files=all -- "$p" 2>/dev/null)
+  rc=$?
+  [ "$rc" -eq 0 ] || { printf 'unknown'; return 0; }
+  printf '%s' "$out" | grep -c . 2>/dev/null
+  return 0
+}
+
+# Same answer for a list of paths: a number when every one is in git and git
+# answered, otherwise the worst of "nogit" / "unknown". Any unsaved count
+# wins, because that is the most specific thing we can say.
 count_unsaved() {
-  command -v git >/dev/null 2>&1 || { printf '0'; return; }
-  timeout "$GIT_TIMEOUT" git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { printf '0'; return; }
-  local n
-  n=$(timeout "$GIT_TIMEOUT" git status --porcelain -- "$@" 2>/dev/null | grep -c . 2>/dev/null)
-  [ -z "$n" ] && n=0
-  printf '%s' "$n"
+  local p r total=0 state=""
+  for p in "$@"; do
+    r=$(unsaved_in "$p")
+    case "$r" in
+      nogit) state="nogit" ;;
+      unknown) [ "$state" = "nogit" ] || state="unknown" ;;
+      *) [ "$r" -gt 0 ] 2>/dev/null && total=$((total + r)) ;;
+    esac
+  done
+  if [ "$total" -gt 0 ] || [ -z "$state" ]; then printf '%s' "$total"; else printf '%s' "$state"; fi
+  return 0
 }
 
 count_files() {
   local target="$1" n
   [ -e "$target" ] || { printf '0'; return; }
   if [ -d "$target" ]; then
-    n=$(timeout 0.12 find "$target" -type f 2>/dev/null | head -n "$FIND_LIMIT" | grep -c . 2>/dev/null)
+    n=$(bounded "$FIND_TIMEOUT" find "$target" -type f 2>/dev/null | head -n "$FIND_LIMIT" | grep -c . 2>/dev/null)
   else
     n=1
   fi
@@ -167,6 +229,191 @@ count_files() {
 }
 
 plural() { [ "$1" = "1" ] && printf '%s' "$2" || printf '%s' "$3"; }
+
+# ---------------------------------------------------------------------------
+# Reading an rm command the way the shell would. Splitting on spaces alone
+# turns `rm -rf "my photos"` into two paths that don't exist, and leaves
+# `~/stuff` and `$HOME/stuff` as names nobody has — so all three used to pass
+# silently. This handles quotes, backslashes, a leading ~, and $HOME / ${HOME};
+# any other variable or `$(...)` can't be known in advance and is marked so.
+#
+# Fills WORDS[], plus WSEP[i]=1 for a command separator, WUNRES[i]=1 for a
+# word that still depends on something only known at run time, and
+# WGLOB[i]=1 for a word with an unquoted * ? or [.
+# ---------------------------------------------------------------------------
+_word=""
+_inword=0
+_unres=0
+_glob=0
+_skipnext=0
+
+flush_word() {
+  if [ "$_inword" -eq 1 ]; then
+    if [ "$_skipnext" -eq 1 ]; then
+      _skipnext=0 # the file after a redirection isn't something rm deletes
+    else
+      WORDS+=("$_word")
+      WSEP+=(0)
+      WUNRES+=("$_unres")
+      WGLOB+=("$_glob")
+    fi
+  fi
+  _word=""
+  _inword=0
+  _unres=0
+  _glob=0
+}
+
+push_separator() {
+  flush_word
+  WORDS+=("$1")
+  WSEP+=(1)
+  WUNRES+=(0)
+  WGLOB+=(0)
+}
+
+# $1 = the text from a `$` onwards. Appends $HOME's value and prints how many
+# characters were used, or marks the word unknown and prints 1.
+expand_dollar() {
+  local rest="$1"
+  if [ -n "${HOME:-}" ]; then
+    case "$rest" in
+      '${HOME}'*) _word+="$HOME"; EXPANDED=7; return 0 ;;
+      '$HOME'*)
+        case "${rest:5:1}" in
+          [A-Za-z0-9_]) ;;
+          *) _word+="$HOME"; EXPANDED=5; return 0 ;;
+        esac
+        ;;
+    esac
+  fi
+  _unres=1
+  _word+='$'
+  EXPANDED=1
+}
+
+tokenize() {
+  local s="$1" i=0 n=${#1} c q=""
+  WORDS=()
+  WSEP=()
+  WUNRES=()
+  WGLOB=()
+  _word=""
+  _inword=0
+  _unres=0
+  _glob=0
+  _skipnext=0
+  while [ "$i" -lt "$n" ]; do
+    c=${s:i:1}
+    if [ -n "$q" ]; then
+      if [ "$c" = "$q" ]; then
+        q=""
+      elif [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        i=$((i + 1))
+        _word+=${s:i:1}
+      elif [ "$q" = '"' ] && [ "$c" = '$' ]; then
+        expand_dollar "${s:i}"
+        i=$((i + EXPANDED - 1))
+      elif [ "$q" = '"' ] && [ "$c" = '`' ]; then
+        _unres=1
+        _word+=$c
+      else
+        _word+=$c
+      fi
+    else
+      case "$c" in
+        "'" | '"') q=$c; _inword=1 ;;
+        '\') i=$((i + 1)); _word+=${s:i:1}; _inword=1 ;;
+        ' ') flush_word ;;
+        ';' | '&' | '|' | '(' | ')')
+          if [ "${s:i+1:1}" = "$c" ]; then
+            push_separator "$c$c"
+            i=$((i + 1))
+          else
+            push_separator "$c"
+          fi
+          ;;
+        '>' | '<')
+          # `2>` — the 2 belongs to the redirection, not to rm.
+          case "$_word" in *[!0-9]* | '') ;; *) _word=""; _inword=0 ;; esac
+          flush_word
+          while [ "${s:i+1:1}" = '>' ] || [ "${s:i+1:1}" = '&' ]; do i=$((i + 1)); done
+          _skipnext=1
+          ;;
+        '~')
+          if [ "$_inword" -eq 0 ] && [ -n "${HOME:-}" ]; then
+            case "${s:i+1:1}" in
+              '/' | ' ' | '' | ';' | '&' | '|') _word+="$HOME" ;;
+              *) _unres=1; _word+='~' ;; # ~otheruser
+            esac
+          else
+            _word+='~'
+          fi
+          _inword=1
+          ;;
+        '$') expand_dollar "${s:i}"; i=$((i + EXPANDED - 1)); _inword=1 ;;
+        '`') _unres=1; _word+=$c; _inword=1 ;;
+        '*' | '?' | '[') _glob=1; _word+=$c; _inword=1 ;;
+        *) _word+=$c; _inword=1 ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+  [ -n "$q" ] && _unres=1 # an unclosed quote: we can't be sure what it means
+  flush_word
+}
+
+# From WORDS, collects the arguments of every rm in the command into
+# TARGETS[] (with TUNRES[] / TGLOB[] alongside) and sets RECURSIVE.
+collect_rm_targets() {
+  local i=0 n=${#WORDS[@]} w at_start=1 in_rm=0 flags_done=0
+  TARGETS=()
+  TUNRES=()
+  TGLOB=()
+  RECURSIVE=0
+  while [ "$i" -lt "$n" ]; do
+    w=${WORDS[$i]}
+    if [ "${WSEP[$i]}" = "1" ]; then
+      at_start=1
+      in_rm=0
+    elif [ "$at_start" -eq 1 ]; then
+      case "$w" in
+        sudo | command | builtin | nice | *=*) ;; # still before the command name
+        rm | */rm) in_rm=1; flags_done=0; at_start=0 ;;
+        *) at_start=0 ;;
+      esac
+    elif [ "$in_rm" -eq 1 ]; then
+      if [ "$flags_done" -eq 0 ] && [ "$w" = "--" ]; then
+        flags_done=1
+      elif [ "$flags_done" -eq 0 ] && [ "${WUNRES[$i]}" = "0" ] && [ "${w#-}" != "$w" ] && [ "$w" != "-" ]; then
+        case "$w" in
+          --recursive) RECURSIVE=1 ;;
+          --*) ;;
+          *[rR]*) RECURSIVE=1 ;;
+        esac
+      else
+        TARGETS+=("$w")
+        TUNRES+=("${WUNRES[$i]}")
+        TGLOB+=("${WGLOB[$i]}")
+      fi
+    fi
+    i=$((i + 1))
+  done
+}
+
+# True for the targets that wipe a disk or a whole home folder.
+is_catastrophic_target() {
+  local t="$1"
+  while [ "${#t}" -gt 1 ] && [ "${t%/}" != "$t" ]; do t=${t%/}; done
+  case "$t" in
+    / | /\* | .. | ../\*) return 0 ;;
+  esac
+  if [ -n "${HOME:-}" ]; then
+    local h="${HOME%/}"
+    [ "$t" = "$h" ] || [ "$t" = "$h/*" ] && return 0
+  fi
+  return 1
+}
 
 # ---------------------------------------------------------------------------
 # Edit / Write: only credentials are worth interrupting for. Ordinary file
@@ -228,14 +475,20 @@ fi
 
 # --- Git: discards work that was never committed ----------------------------
 if printf '%s' "$CMD" | grep -qE 'git +reset +--hard|git +clean +-[a-z]*f|git +checkout +-- +\.'; then
-  UNSAVED=$(count_unsaved)
+  UNSAVED=$(count_unsaved .)
+  if [ "$UNSAVED" = "unknown" ]; then
+    respond_ask \
+      "This throws away any changes you haven't committed." \
+      "Git didn't answer in time, so it's unclear whether there are any."
+  fi
   if [ "$UNSAVED" -gt 0 ] 2>/dev/null; then
     respond_ask \
       "This throws away your uncommitted changes." \
       "$UNSAVED $(plural "$UNSAVED" "file has" "files have") edits that aren't saved in git yet." \
       "loud"
   fi
-  # Nothing uncommitted means nothing to lose — stay quiet.
+  # Nothing uncommitted means nothing to lose, and outside a repo the command
+  # just fails — stay quiet.
   exit 0
 fi
 
@@ -251,7 +504,7 @@ if printf '%s' "$CMD" | grep -qE 'git +push +.*(--force|-f)( |$)'; then
 fi
 
 # --- rm ---------------------------------------------------------------------
-if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(sudo +)?rm( |$)'; then
+if printf '%s' "$CMD" | grep -qE '(^|[;&|(] *)(sudo +)?([^ ;&|]*/)?rm( |$)'; then
 
   # Catastrophic targets first: these are never a good idea.
   if printf '%s' "$CMD" | grep -qE 'rm +(-[a-zA-Z]+ +)*(/|~|/\*|~/\*|\$HOME|\.\.)( |$|/\*)'; then
@@ -261,30 +514,71 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(sudo +)?rm( |$)'; then
       "loud"
   fi
 
-  # Collect the paths being removed (skip flags).
-  PATHS=""
-  COUNT=0
-  for word in $CMD; do
-    case "$word" in
-      rm|sudo|-*|'&&'|'||'|';') continue ;;
-    esac
-    PATHS="$PATHS $word"
-    COUNT=$((COUNT + 1))
+  # Reading a command character by character is slow in bash. Past this
+  # length, a recursive delete gets a plain question instead of a guess.
+  if [ "${#CMD}" -gt "$MAX_PARSE_CHARS" ]; then
+    if printf '%s' "$CMD" | grep -qE 'rm +(-[a-zA-Z]*[rR][a-zA-Z]* +)'; then
+      respond_ask \
+        "This deletes folders from a command too long to check here." \
+        "Have a look at what it removes before saying yes."
+    fi
+    exit 0
+  fi
+
+  tokenize "$CMD"
+  collect_rm_targets
+  [ "${#TARGETS[@]}" -eq 0 ] && exit 0
+
+  # Turn each target into real paths: globs are expanded here, in the same
+  # directory the command will run in.
+  PATHS=()
+  UNRESOLVED=0
+  i=0
+  while [ "$i" -lt "${#TARGETS[@]}" ]; do
+    t=${TARGETS[$i]}
+    if [ "${TUNRES[$i]}" = "1" ]; then
+      UNRESOLVED=1
+    else
+      if is_catastrophic_target "$t"; then
+        respond_ask \
+          "This tries to delete your whole home folder or the whole disk." \
+          "That is almost certainly not what was meant." \
+          "loud"
+      fi
+      if [ "${TGLOB[$i]}" = "1" ]; then
+        while IFS= read -r match; do
+          [ -n "$match" ] && PATHS+=("$match")
+        done <<EOF_GLOB
+$(compgen -G "$t" 2>/dev/null | head -n "$FIND_LIMIT")
+EOF_GLOB
+      else
+        PATHS+=("$t")
+      fi
+    fi
+    i=$((i + 1))
   done
+
+  # A recursive delete of something only known at run time — `rm -rf $DIR`,
+  # `rm -rf "$(pwd)"` — can't be judged here. Saying nothing would treat
+  # "don't know" as "safe", so ask.
+  if [ "$UNRESOLVED" -eq 1 ] && [ "$RECURSIVE" -eq 1 ]; then
+    respond_ask \
+      "This deletes a folder whose name is only filled in when the command runs." \
+      "Make sure you know where it points before saying yes."
+  fi
+
+  COUNT=${#PATHS[@]}
   [ "$COUNT" -eq 0 ] && exit 0
 
   # Every path is build output or already git-ignored → routine cleanup.
   ALL_IGNORABLE=1
-  for p in $PATHS; do
+  for p in "${PATHS[@]}"; do
     if ! is_ignorable_path "$p" && ! is_git_ignored "$p"; then
       ALL_IGNORABLE=0
       break
     fi
   done
   [ "$ALL_IGNORABLE" -eq 1 ] && exit 0
-
-  RECURSIVE=0
-  printf '%s' "$CMD" | grep -qE 'rm +(-[a-zA-Z]*r[a-zA-Z]* +)' && RECURSIVE=1
 
   # A bare glob, a recursive delete, or a bulk list is worth a look.
   BARE_GLOB=0
@@ -296,33 +590,54 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|] *)(sudo +)?rm( |$)'; then
 
   # Count what actually disappears, and how much of it isn't saved in git.
   TOTAL=0
-  for p in $PATHS; do
+  EXISTING=()
+  for p in "${PATHS[@]}"; do
     n=$(count_files "$p")
-    TOTAL=$((TOTAL + n))
+    if [ "$n" -gt 0 ] 2>/dev/null; then
+      TOTAL=$((TOTAL + n))
+      EXISTING+=("$p")
+    fi
   done
   [ "$TOTAL" -eq 0 ] && exit 0
 
-  # shellcheck disable=SC2086
-  UNSAVED=$(count_unsaved $PATHS)
+  UNSAVED=$(count_unsaved "${EXISTING[@]}")
+  FILES="$TOTAL $(plural "$TOTAL" "file" "files")"
 
   # Reaching here means the delete is recursive, uses a bare glob, or names
   # more than five paths — all of which §9.5 asks us to surface. The only
   # question left is how alarming the message should be.
+  case "$UNSAVED" in
+    nogit)
+      respond_ask \
+        "This deletes $FILES and can't be undone." \
+        "$(plural "$TOTAL" "It isn't" "They aren't") saved in git, so there is no copy to get back." \
+        "loud"
+      ;;
+    unknown)
+      respond_ask \
+        "This deletes $FILES and can't be undone." \
+        "Git couldn't confirm a saved copy exists, so assume there isn't one." \
+        "loud"
+      ;;
+  esac
+
   if [ "$UNSAVED" -gt 0 ] 2>/dev/null; then
     respond_ask \
-      "This deletes $TOTAL $(plural "$TOTAL" "file" "files") and can't be undone." \
+      "This deletes $FILES and can't be undone." \
       "$UNSAVED of them $(plural "$UNSAVED" "has" "have") changes that aren't saved in git." \
       "loud"
   fi
 
+  # Only now, with git having answered and found nothing unsaved, is it true
+  # to say the files can be got back.
   if [ "$COUNT" -gt 5 ]; then
     respond_ask \
-      "This deletes $TOTAL $(plural "$TOTAL" "file" "files") across $COUNT places at once." \
+      "This deletes $FILES across $COUNT places at once." \
       "All of it is saved in git, so you could get it back."
   fi
 
   respond_ask \
-    "This deletes $TOTAL $(plural "$TOTAL" "file" "files")." \
+    "This deletes $FILES." \
     "All of it is saved in git, so you could get it back."
 fi
 

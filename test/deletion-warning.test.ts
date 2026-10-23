@@ -18,11 +18,16 @@ const HOOK = path.join(projectRoot, "kits", "deletion-warning", "hooks", "warn-b
 
 let repo: string;
 
-function run(payload: unknown, cwd = repo): { stdout: string; code: number } {
+function run(
+  payload: unknown,
+  cwd = repo,
+  env: NodeJS.ProcessEnv = process.env,
+): { stdout: string; code: number } {
   try {
     const stdout = execFileSync("bash", [HOOK], {
       input: typeof payload === "string" ? payload : JSON.stringify(payload),
       cwd,
+      env,
       encoding: "utf8",
       timeout: 10_000,
     });
@@ -33,8 +38,16 @@ function run(payload: unknown, cwd = repo): { stdout: string; code: number } {
   }
 }
 
-function bash(payload: string, cwd = repo) {
-  return run({ tool_name: "Bash", tool_input: { command: payload } }, cwd);
+function bash(payload: string, cwd = repo, env: NodeJS.ProcessEnv = process.env) {
+  return run({ tool_name: "Bash", tool_input: { command: payload } }, cwd, env);
+}
+
+/** The human-readable reason, with the JSON escapes for newlines undone. */
+function reasonOf(out: { stdout: string }): string {
+  return (/"permissionDecisionReason":"((?:[^"\\]|\\.)*)"/.exec(out.stdout)?.[1] ?? "").replace(
+    /\\n/g,
+    "\n",
+  );
 }
 
 function warns(out: { stdout: string }): boolean {
@@ -166,6 +179,109 @@ describe("the alerts", () => {
     expect(warns(bash("rm gone1.txt gone2.txt gone3.txt gone4.txt gone5.txt gone6.txt"))).toBe(
       false,
     );
+  });
+});
+
+describe("only says a delete can be undone when git has actually confirmed it", () => {
+  let outside: string;
+  beforeEach(() => {
+    outside = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-dw-nogit-"));
+    fs.mkdirSync(path.join(outside, "stuff"));
+    for (const n of ["a", "b", "c"]) fs.writeFileSync(path.join(outside, "stuff", n), "x\n");
+  });
+  afterEach(() => fs.rmSync(outside, { recursive: true, force: true }));
+
+  it("says files outside any git repo can't be got back", () => {
+    const out = bash("rm -rf stuff", outside);
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("3 files");
+    expect(reasonOf(out)).toContain("aren't saved in git");
+    expect(reasonOf(out)).not.toContain("could get it back");
+  });
+
+  it("says it couldn't check when git doesn't answer in time", () => {
+    // A git that hangs: the old 0.1s budget turned this into "all saved".
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-dw-bin-"));
+    fs.writeFileSync(path.join(fakeBin, "git"), "#!/bin/sh\nsleep 5\n", { mode: 0o755 });
+    try {
+      const env = { ...process.env, PATH: `${fakeBin}:${process.env["PATH"]}` };
+      const out = bash("rm -rf src/", repo, env);
+      expect(warns(out)).toBe(true);
+      expect(reasonOf(out)).toContain("couldn't confirm");
+      expect(reasonOf(out)).not.toContain("could get it back");
+    } finally {
+      fs.rmSync(fakeBin, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("speaks up about git reset --hard when git can't say whether anything is unsaved", () => {
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), "ccpanel-dw-bin-"));
+    fs.writeFileSync(path.join(fakeBin, "git"), "#!/bin/sh\nsleep 5\n", { mode: 0o755 });
+    try {
+      const env = { ...process.env, PATH: `${fakeBin}:${process.env["PATH"]}` };
+      expect(warns(bash("git reset --hard", repo, env))).toBe(true);
+    } finally {
+      fs.rmSync(fakeBin, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe("reads paths the way the shell would", () => {
+  let home: string;
+  let env: NodeJS.ProcessEnv;
+  beforeEach(() => {
+    // Not under the system temp dir: the hook rightly ignores deletes in
+    // /tmp, which would hide whether ~ was read at all. Its own git repo, so
+    // the answer about unsaved work doesn't depend on this checkout.
+    home = fs.mkdtempSync(path.join(projectRoot, "test", ".tmp-home-"));
+    execSync("git init -q .", { cwd: home });
+    fs.mkdirSync(path.join(home, "stuff"));
+    for (const n of ["a", "b"]) fs.writeFileSync(path.join(home, "stuff", n), "x\n");
+    env = { ...process.env, HOME: home };
+  });
+  afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  for (const cmd of [
+    "rm -rf ~/stuff",
+    "rm -rf $HOME/stuff",
+    "rm -rf ${HOME}/stuff",
+    'rm -rf "$HOME/stuff"',
+    "cd /tmp && rm -rf ~/stuff",
+  ]) {
+    it(`warns on: ${cmd}`, () => {
+      const out = bash(cmd, repo, env);
+      expect(warns(out)).toBe(true);
+      expect(reasonOf(out)).toContain("2 files");
+      expect(reasonOf(out)).toContain("aren't saved in git");
+    });
+  }
+
+  it("treats a quoted name with a space as one folder", () => {
+    fs.mkdirSync(path.join(repo, "my photos"));
+    for (const n of ["1.jpg", "2.jpg"]) fs.writeFileSync(path.join(repo, "my photos", n), "x");
+    execSync("git add -A && git commit -qm photos", { cwd: repo });
+    for (const cmd of ['rm -rf "my photos"', "rm -rf 'my photos'", "rm -rf my\\ photos"]) {
+      const out = bash(cmd);
+      expect(warns(out), cmd).toBe(true);
+      expect(reasonOf(out), cmd).toContain("2 files");
+    }
+  });
+
+  it("asks when a recursive delete names something only known at run time", () => {
+    const out = bash('rm -rf "$BUILD_ROOT/output"');
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("only filled in when the command runs");
+    expect(warns(bash("rm -rf $(pwd)/src"))).toBe(true);
+  });
+
+  it('still treats rm -rf "$HOME" as the whole home folder', () => {
+    expect(reasonOf(bash('rm -rf "$HOME"', repo, env))).toContain("whole home folder");
+    expect(reasonOf(bash("rm -rf ~/", repo, env))).toContain("whole home folder");
+  });
+
+  it("isn't fooled by a redirection or an unrelated command", () => {
+    expect(warns(bash("rm -rf node_modules 2>/dev/null"))).toBe(false);
+    expect(warns(bash("echo rm -rf src > notes.txt"))).toBe(false);
   });
 });
 

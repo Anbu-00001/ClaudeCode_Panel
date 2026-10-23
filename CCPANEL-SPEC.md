@@ -713,7 +713,9 @@ is the worst possible outcome for a safety feature.
   they have no safety feature. Wrap everything; never let a bug become a block.
 - **Zero network, zero AI.** Pure pattern matching plus `git`. This is C1, and it is also why
   it can run on every tool call without costing anything.
-- **Fast.** Hard-cap at 200ms; past that, allow and move on.
+- **Fast.** Aim for 200ms; past that, allow and move on. The one exception is a git call
+  (up to 2s): when git can't answer, the hook says it couldn't check rather than claiming
+  the files are saved.
 - **Honest in the UI.** The install preview must say plainly: *"This catches common
   destructive commands. It won't catch everything — treat it as a seatbelt, not a wall."*
   Overselling a partial safety net is worse than not shipping one.
