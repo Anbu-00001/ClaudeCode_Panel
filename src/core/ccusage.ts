@@ -113,13 +113,27 @@ export function parseUsage(raw: unknown, period: Period): UsageReport {
   return { rows: rows.reverse(), totalCost };
 }
 
+/**
+ * An exact version, never `@latest`: `npx -y` runs whatever it downloads with
+ * the user's own permissions, so "latest" would mean running code nobody here
+ * has looked at, published minutes ago. Bump this on purpose, after checking
+ * the JSON still has the shape parseUsage reads.
+ */
+export const CCUSAGE_VERSION = "20.0.26";
+
+/** The exact command the Spending screen runs. */
+export function ccusageArgv(period: Period): string[] {
+  return ["npx", "-y", `ccusage@${CCUSAGE_VERSION}`, period, "--json"];
+}
+
 export async function getUsage(period: Period, now = Date.now()): Promise<UsageOutcome> {
   const hit = cache.get(period);
   if (hit && now - hit.at < CACHE_MS) return hit.outcome;
 
   let outcome: UsageOutcome;
   try {
-    const { stdout } = await run("npx", ["-y", "ccusage@latest", period, "--json"], {
+    const [file, ...args] = ccusageArgv(period);
+    const { stdout } = await run(file as string, args, {
       timeout: 90_000,
       maxBuffer: 32 * 1024 * 1024,
       encoding: "utf8",
@@ -156,8 +170,14 @@ export function friendlyModel(modelName: string): string {
 export const ATTRIBUTION_LIMIT =
   "We can show what each day and each model cost. We can't split it by individual tool or ability — that isn't recorded anywhere on your computer.";
 
+/**
+ * Precise on purpose. The usage itself is read from local files and never
+ * leaves the machine, but this screen does use the network: npx downloads
+ * ccusage the first time, and ccusage fetches the public model price list.
+ * "Nothing was sent anywhere" would have been a comforting overstatement.
+ */
 export const PRIVACY_NOTE =
-  "This is worked out from files on your computer. Nothing was sent anywhere.";
+  "Worked out from files on your computer; your usage isn't sent anywhere. To do the sums it downloads the ccusage tool (first time only) and a public list of model prices.";
 
 export function _clearCacheForTests(): void {
   cache.clear();

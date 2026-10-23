@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ATTRIBUTION_LIMIT,
+  ccusageArgv,
   formatMoney,
   friendlyModel,
   PRIVACY_NOTE,
@@ -87,6 +88,18 @@ describe("reading spending", () => {
 
   it("refuses to imply per-tool costs exist (§10.7)", () => {
     expect(ATTRIBUTION_LIMIT).toContain("can't split it by individual tool");
-    expect(PRIVACY_NOTE).toContain("Nothing was sent anywhere");
+    expect(PRIVACY_NOTE).toContain("your usage isn't sent anywhere");
+  });
+
+  it("is honest that the screen downloads things, rather than claiming nothing left", () => {
+    expect(PRIVACY_NOTE).not.toContain("Nothing was sent anywhere");
+    expect(PRIVACY_NOTE).toContain("downloads");
+  });
+
+  it("runs an exact, pinned ccusage, never whatever was published last", () => {
+    const argv = ccusageArgv("daily");
+    expect(argv.slice(0, 2)).toEqual(["npx", "-y"]);
+    expect(argv[2]).toMatch(/^ccusage@\d+\.\d+\.\d+$/);
+    expect(argv.join(" ")).not.toContain("latest");
   });
 });

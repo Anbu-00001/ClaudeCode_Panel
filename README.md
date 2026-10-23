@@ -62,8 +62,12 @@ Kits are plain files in [`kits/`](kits/) — readable, reviewable, and easy to c
 These are guarantees, not aspirations. Each one has tests.
 
 - **It never spends your money.** Zero calls to any Anthropic API. Every number is arithmetic over
-  local files. The only network calls are the MCP registry when you search, and `npx` during an
-  install you started.
+  local files, and your usage is never sent anywhere. It does use the network in these places, and
+  only these: the Spending screen runs a pinned version of `ccusage` through `npx` (downloaded the
+  first time) and `ccusage` fetches the public model price list; a kit that adds a tool, such as
+  browser testing, has Claude Code fetch that tool with `npx` when it first starts it; and an
+  update you confirm on the Manage screen runs exactly the command it showed you (for example
+  `git pull`).
 - **It never corrupts a config file.** Claude Code rejects an invalid settings file *entirely* — one
   stray comma kills every permission rule and hook you had. So every write reads, parses, snapshots,
   validates, writes to a temp file, renames atomically, then re-reads to confirm. A file that

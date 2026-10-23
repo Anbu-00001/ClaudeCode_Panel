@@ -859,11 +859,15 @@ Reverse-chronological list of every change, including whole kit installs as sing
 
 ### 10.7 Spending
 
-Wraps `npx ccusage@latest <sub> --json`. Cache 60s. If ccusage is missing or fails, say
+Wraps `npx -y ccusage@<pinned exact version> <sub> --json` (never `@latest`: npx runs what it
+downloads). Cache 60s. If ccusage is missing or fails, say
 *"Can't read your usage right now"* with the real error behind `Enter` — never a fake zero.
 
 Map `--instances`/`--project` → **"Where it went"**; `--breakdown` → **"By model"**. Footer:
-*"This is worked out from files on your computer. Nothing was sent anywhere."*
+*"Worked out from files on your computer; your usage isn't sent anywhere. To do the sums it
+downloads the ccusage tool (first time only) and a public list of model prices."* (The earlier
+wording, "Nothing was sent anywhere", was untrue: npx and ccusage's price lookup both use the
+network.)
 
 **Honest limit — do not violate.** Per-tool and per-skill dollar attribution does not exist
 in the data. Don't invent a proxy. If asked, say: *"We can show what each project and model
