@@ -9,6 +9,7 @@ import {
   BACKUP_MAX_AGE_MS,
   backupKey,
   backupsDir,
+  describeInvalid,
   findFencedBlock,
   type Operation,
   runTransaction,
@@ -248,6 +249,53 @@ describe("write protocol (§12.1)", () => {
     expect(result.ok).toBe(false);
     expect(result.failure?.reason).toBe("invalid");
     expect(fs.readFileSync(target)).toEqual(before);
+  });
+
+  it("doesn't let a problem in a key it isn't changing block the write", () => {
+    const target = path.join(workDir, "settings.json");
+    // Claude Code wants strings in env; the user wrote a number.
+    fs.writeFileSync(target, serializeJson({ env: { PORT: 3000 } }));
+
+    const result = runTransaction(
+      [
+        {
+          kind: "patchJson",
+          filePath: target,
+          keyPath: ["permissions"],
+          mutate: (d) => {
+            d["permissions"] = { allow: ["Bash(ls *)"] };
+          },
+        },
+      ],
+      meta,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(target, "utf8"))).toEqual({
+      env: { PORT: 3000 },
+      permissions: { allow: ["Bash(ls *)"] },
+    });
+  });
+
+  it("names the file and the entry when it refuses a write", () => {
+    const target = path.join(workDir, "settings.json");
+    const result = runTransaction(
+      [
+        {
+          kind: "patchJson",
+          filePath: target,
+          keyPath: ["skillOverrides"],
+          mutate: (d) => {
+            d["skillOverrides"] = { deploy: "sometimes" };
+          },
+        },
+      ],
+      meta,
+    );
+    expect(result.failure?.reason).toBe("invalid");
+    const text = describeInvalid(result.failure as Parameters<typeof describeInvalid>[0]);
+    expect(text).toContain("settings.json");
+    expect(text).toContain('"skillOverrides.deploy"');
   });
 
   it("accepts all four documented skillOverrides states", () => {

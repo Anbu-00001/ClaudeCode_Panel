@@ -23,7 +23,7 @@ import { listTools, SCOPE_HEADING, type ToolInfo } from "../core/tools.js";
 import { defaultExec, listSkillUpdates, type SkillUpdateCheck } from "../core/updates.js";
 import { readFolderUsage, readSessionUsage, type UsageReport } from "../core/usage.js";
 import type { SkillOverrideState } from "../core/validate.js";
-import type { TransactionResult } from "../core/write.js";
+import { describeInvalid, type TransactionResult } from "../core/write.js";
 
 interface ManageProps {
   repo: RepoInfo;
@@ -118,6 +118,7 @@ function writeProblem(result: TransactionResult): string {
   if (failure?.reason === "unparseable") {
     return "That file has a syntax error, so ccpanel left it alone. Fix the file first.";
   }
+  if (failure?.reason === "invalid") return describeInvalid(failure);
   return "That couldn't be saved, so nothing was changed.";
 }
 

@@ -18,6 +18,7 @@ import {
 } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 import { appendUndoEntry } from "../core/undo.js";
+import { describeInvalid } from "../core/write.js";
 
 type Stage = "preview" | "files" | "confirm-uninstall" | "done" | "failed";
 
@@ -379,6 +380,9 @@ function describeFailure(failure: unknown): string {
   const f = failure as { reason?: string; message?: string; filePath?: string };
   if (f.reason === "unparseable") {
     return "One of your setup files has a typo in it, so it wasn't safe to change. Nothing was touched.";
+  }
+  if (f.reason === "invalid") {
+    return describeInvalid(failure as Parameters<typeof describeInvalid>[0]);
   }
   if (f.reason === "conflict") {
     return f.message ?? "A different file is already where this one would go.";

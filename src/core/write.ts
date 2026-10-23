@@ -566,16 +566,23 @@ function applyOperation(
       const backupPath = snapshot(op.filePath);
 
       // 4. Mutate in memory — only the keys this operation owns.
+      // Problems already in the file (an env value written as a number, say)
+      // are noted first: they aren't this write's doing, and refusing every
+      // change over a key ccpanel never touches would lock the user out.
+      const issuesBefore = issueKeys(validateByFilename(op.filePath, read.value).issues);
       const before = structuredClone(getAtPath(read.value, op.keyPath));
       op.mutate(read.value);
       const after = structuredClone(getAtPath(read.value, op.keyPath));
 
-      // 5. Validate. Issues abort the write; nothing has been written yet.
-      const validation = validateByFilename(op.filePath, read.value);
-      if (!validation.ok) {
+      // 5. Validate. Only problems this change introduces abort the write;
+      // nothing has been written yet.
+      const introduced = validateByFilename(op.filePath, read.value).issues.filter(
+        (issue) => !issuesBefore.has(issueKey(issue)),
+      );
+      if (introduced.length > 0) {
         return {
           ok: false,
-          failure: { reason: "invalid", filePath: op.filePath, issues: validation.issues },
+          failure: { reason: "invalid", filePath: op.filePath, issues: introduced },
         };
       }
 
@@ -719,6 +726,24 @@ function applyOperation(
       };
     }
   }
+}
+
+function issueKey(issue: { path: string; message: string }): string {
+  return `${issue.path}\u0000${issue.message}`;
+}
+
+function issueKeys(issues: Array<{ path: string; message: string }>): Set<string> {
+  return new Set(issues.map(issueKey));
+}
+
+/** A refused write, in words that name the file and the exact entry. */
+export function describeInvalid(failure: {
+  filePath: string;
+  issues: Array<{ path: string; message: string }>;
+}): string {
+  const first = failure.issues[0];
+  const where = first ? ` at "${first.path}" (${first.message})` : "";
+  return `That change would have left ${path.basename(failure.filePath)} with a value Claude Code doesn't accept${where}, so nothing was changed.`;
 }
 
 function hasSecret(value: unknown): boolean {
