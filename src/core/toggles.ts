@@ -41,7 +41,12 @@ export function setSkillState(
         },
       },
     ],
-    { kind: "toggle", id: `skill:${skillName}`, label: `Changed "${skillName}" to ${state}` },
+    {
+      kind: "toggle",
+      id: `skill:${skillName}`,
+      label: `Changed "${skillName}" to ${state}`,
+      projectDir: repo.projectDir,
+    },
     appendUndoEntry,
   );
 }
@@ -80,6 +85,7 @@ export function setToolEnabled(
       kind: "toggle",
       id: `tool:${serverName}`,
       label: `Turned "${serverName}" ${enabled ? "on" : "off"}`,
+      projectDir: repo.projectDir,
     },
     appendUndoEntry,
   );
@@ -221,6 +227,7 @@ export function setConnectorsEnabled(repo: RepoInfo, enabled: boolean): Transact
       kind: "toggle",
       id: "connectors",
       label: `Turned tools from claude.ai ${enabled ? "on" : "off"}`,
+      projectDir: repo.projectDir,
     },
     appendUndoEntry,
   );

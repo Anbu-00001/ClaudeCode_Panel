@@ -146,6 +146,54 @@ export function atomicWriteFile(
   }
 }
 
+/**
+ * Where a write to `filePath` would really land, following links in the file
+ * and in every folder above it. For a path that doesn't exist yet, the
+ * nearest existing folder is resolved and the rest added back on.
+ */
+export function realTarget(filePath: string, depth = 0): string {
+  // A loop of links never resolves; stop following and take the path as given.
+  if (depth > 40) return path.resolve(filePath);
+  const missing: string[] = [];
+  let current = path.resolve(filePath);
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...missing.reverse());
+    } catch {
+      let isDanglingLink = false;
+      try {
+        isDanglingLink = fs.lstatSync(current).isSymbolicLink();
+      } catch {
+        /* nothing there */
+      }
+      if (isDanglingLink) {
+        // A link to something that doesn't exist yet: follow it by hand.
+        const target = path.resolve(path.dirname(current), fs.readlinkSync(current));
+        return path.join(realTarget(target, depth + 1), ...missing.reverse());
+      }
+      const parent = path.dirname(current);
+      if (parent === current) return path.join(current, ...missing.reverse());
+      missing.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * For a file inside `projectDir`, the real place it points to when that is
+ * outside the project; otherwise null. Files that aren't in the project
+ * (the user's own ~/.claude) aren't this check's business.
+ */
+export function escapesProject(filePath: string, projectDir: string): string | null {
+  const inside = (child: string, parent: string) => {
+    const rel = path.relative(parent, child);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  };
+  if (!inside(path.resolve(filePath), path.resolve(projectDir))) return null;
+  const real = realTarget(filePath);
+  return inside(real, realTarget(projectDir)) ? null : real;
+}
+
 /** The file a symlink points to (through any chain of links), or the path itself. */
 function followSymlink(filePath: string): string {
   let isLink = false;
@@ -512,6 +560,14 @@ export interface TransactionMeta {
   kind: string;
   id: string;
   label: string;
+  /**
+   * The project folder, when the transaction writes into one. A file under
+   * it that is really a symlink (or sits in a symlinked folder) pointing
+   * outside it is refused: a repository could commit
+   * .claude/settings.json -> ../../../.claude/settings.json and have a
+   * "this project" change land in the user's own settings.
+   */
+  projectDir?: string;
 }
 
 export interface TransactionResult {
@@ -773,6 +829,23 @@ export function runTransaction(
   recordUndo?: (meta: TransactionMeta, changes: RecordedChange[]) => void,
 ): TransactionResult {
   const applied: RecordedChange[] = [];
+
+  if (meta.projectDir) {
+    for (const op of ops) {
+      const realPlace = escapesProject(op.filePath, meta.projectDir);
+      if (realPlace) {
+        return {
+          ok: false,
+          changes: [],
+          failure: {
+            reason: "conflict",
+            filePath: op.filePath,
+            message: `${path.basename(op.filePath)} in this project is a link to ${realPlace}, which is outside the project, so ccpanel left it alone.`,
+          },
+        };
+      }
+    }
+  }
 
   for (const op of ops) {
     let result: ReturnType<typeof applyOperation>;

@@ -1112,6 +1112,7 @@ export function installKit(
       kind: "kit",
       id: kit.id,
       label: `Set up: ${kit.title}`,
+      projectDir: repo.projectDir,
     },
     recordUndo,
   );
@@ -1176,6 +1177,7 @@ export function uninstallKit(
       kind: "kit-uninstall",
       id: kit.id,
       label: `Removed: ${kit.title}`,
+      projectDir: repo.projectDir,
     },
     recordUndo,
   );

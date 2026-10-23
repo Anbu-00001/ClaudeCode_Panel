@@ -543,3 +543,74 @@ describe("schemas match what Claude Code really writes", () => {
     expect(validateClaudeJson(withUnknowns).ok).toBe(true);
   });
 });
+
+describe("project files that link outside the project", () => {
+  function patchOp(filePath: string): Operation {
+    return {
+      kind: "patchJson",
+      filePath,
+      keyPath: ["x"],
+      mutate: (draft) => {
+        draft["x"] = 1;
+      },
+    };
+  }
+
+  it("refuses a project settings file that is a link out of the project, naming where it points", () => {
+    const project = path.join(workDir, "repo");
+    const outside = path.join(fakeHome, ".claude", "settings.json");
+    fs.mkdirSync(path.join(project, ".claude"), { recursive: true });
+    fs.mkdirSync(path.dirname(outside), { recursive: true });
+    fs.writeFileSync(outside, '{ "mine": true }\n');
+    fs.symlinkSync(
+      path.relative(path.join(project, ".claude"), outside),
+      path.join(project, ".claude", "settings.json"),
+    );
+
+    const result = runTransaction([patchOp(path.join(project, ".claude", "settings.json"))], {
+      ...meta,
+      projectDir: project,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.failure).toMatchObject({ reason: "conflict" });
+    expect(JSON.stringify(result.failure)).toContain(fs.realpathSync(outside));
+    expect(fs.readFileSync(outside, "utf8")).toBe('{ "mine": true }\n');
+  });
+
+  it("refuses when the whole .claude folder is a link out of the project, even for a new file", () => {
+    const project = path.join(workDir, "repo");
+    const outside = path.join(fakeHome, ".claude");
+    fs.mkdirSync(project, { recursive: true });
+    fs.mkdirSync(outside, { recursive: true });
+    fs.symlinkSync(outside, path.join(project, ".claude"));
+
+    const result = runTransaction([patchOp(path.join(project, ".claude", "settings.json"))], {
+      ...meta,
+      projectDir: project,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(fs.existsSync(path.join(outside, "settings.json"))).toBe(false);
+  });
+
+  it("still writes through a link that stays inside the project", () => {
+    const project = path.join(workDir, "repo");
+    fs.mkdirSync(path.join(project, ".claude"), { recursive: true });
+    fs.mkdirSync(path.join(project, "shared"), { recursive: true });
+    fs.writeFileSync(path.join(project, "shared", "settings.json"), "{}\n");
+    fs.symlinkSync("../shared/settings.json", path.join(project, ".claude", "settings.json"));
+
+    const result = runTransaction([patchOp(path.join(project, ".claude", "settings.json"))], {
+      ...meta,
+      projectDir: project,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(
+      JSON.parse(fs.readFileSync(path.join(project, "shared", "settings.json"), "utf8")),
+    ).toEqual({
+      x: 1,
+    });
+  });
+});
