@@ -102,7 +102,7 @@ describe("the kit screen shows exactly what it does", () => {
 
     const hook = previewKit(getKit("deletion-warning", kitsDir)!, repo);
     expect(hook.lines.flatMap((l) => l.details ?? []).join("\n")).toContain(
-      "Runs before Claude uses a tool (Bash|Edit|Write): ${CLAUDE_PROJECT_DIR}/.claude/hooks/warn-before-delete.sh",
+      'Runs before Claude uses a tool (Bash|Edit|Write): "$CLAUDE_PROJECT_DIR"/.claude/hooks/warn-before-delete.sh',
     );
 
     const { lastFrame, unmount } = show("deletion-warning");

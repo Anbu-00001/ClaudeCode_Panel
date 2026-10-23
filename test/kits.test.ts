@@ -9,6 +9,7 @@ import {
   getKit,
   installKit,
   isKitInstalled,
+  kitHasUpdate,
   loadKits,
   previewKit,
   uninstallKit,
@@ -109,7 +110,7 @@ describe("install and uninstall", () => {
     );
     expect(settings.hooks.PreToolUse).toHaveLength(1);
     expect(settings.hooks.PreToolUse[0].matcher).toBe("Bash|Edit|Write");
-    expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain("${CLAUDE_PROJECT_DIR}");
+    expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain('"$CLAUDE_PROJECT_DIR"');
   });
 
   it("acceptance #11: detects an already-installed kit rather than duplicating it", () => {
@@ -261,6 +262,41 @@ describe("post-install self-check (§9.5)", () => {
     expect(verify.checks.find((c) => c.label === "Automatic checks are switched on")?.ok).toBe(
       false,
     );
+  });
+
+  it("works, and checks itself honestly, in a folder whose name has a space", () => {
+    const spaced = path.join(repoDir, "my project");
+    fs.mkdirSync(spaced);
+    execSync("git init -q .", { cwd: spaced });
+    const spacedRepo = resolvePaths(spaced);
+    const settingsPath = path.join(spaced, ".claude", "settings.json");
+
+    installKit(kit(), spacedRepo, appendUndoEntry);
+    expect(verifyDeletionWarning(kit(), spacedRepo).ok).toBe(true);
+
+    // The command an earlier version wrote breaks on the space, and the
+    // check must say so rather than run the script file directly.
+    const legacy = "${CLAUDE_PROJECT_DIR}/.claude/hooks/warn-before-delete.sh";
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    settings.hooks.PreToolUse[0].hooks[0].command = legacy;
+    fs.writeFileSync(settingsPath, serializeJson(settings));
+    const broken = verifyDeletionWarning(kit(), spacedRepo);
+    expect(broken.checks.find((c) => c.label === "A test warning worked")?.ok).toBe(false);
+
+    // Setting it up again recognises the old command as the kit's own and
+    // replaces it, rather than adding a second one.
+    expect(kitHasUpdate(kit(), spacedRepo)).toBe(true);
+    installKit(kit(), spacedRepo, appendUndoEntry);
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    expect(after.hooks.PreToolUse).toHaveLength(1);
+    expect(after.hooks.PreToolUse[0].hooks).toEqual([
+      { type: "command", command: '"$CLAUDE_PROJECT_DIR"/.claude/hooks/warn-before-delete.sh' },
+    ]);
+    expect(kitHasUpdate(kit(), spacedRepo)).toBe(false);
+    expect(verifyDeletionWarning(kit(), spacedRepo).ok).toBe(true);
+
+    uninstallKit(kit(), spacedRepo, appendUndoEntry);
+    expect(JSON.parse(fs.readFileSync(settingsPath, "utf8")).hooks).toBeUndefined();
   });
 
   it("reports a missing file rather than claiming success", () => {

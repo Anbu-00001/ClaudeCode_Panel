@@ -83,6 +83,11 @@ const installEntrySchema = z.discriminatedUnion("kind", [
     kind: z.literal("settings"),
     scope: z.enum(["project", "local", "user"]),
     patch: z.record(z.string(), z.unknown()),
+    /**
+     * Hook commands earlier versions of this kit wrote. A hook running one of
+     * these is the kit's own, so an update replaces it and uninstall removes it.
+     */
+    replacesCommands: z.array(z.string()).optional(),
   }),
   z.looseObject({
     kind: z.literal("claudemd"),
@@ -613,10 +618,13 @@ function buildOperations(
         keyPath: [Object.keys(patch)[0] ?? "hooks"],
         mutate: (draft) => {
           const added: PermissionLists = {};
-          applySettingsPatch(draft, patch, mode, {
-            added,
-            remove: permissions.remove.get(absolutePath),
-          });
+          applySettingsPatch(
+            draft,
+            patch,
+            mode,
+            { added, remove: permissions.remove.get(absolutePath) },
+            entry.replacesCommands ?? [],
+          );
           if (mode === "install") permissions.added.set(absolutePath, added);
         },
       });
@@ -717,6 +725,7 @@ function applySettingsPatch(
     added: {},
     remove: undefined,
   },
+  olderCommands: string[] = [],
 ): void {
   for (const [topKey, topValue] of Object.entries(patch)) {
     if (topKey === "hooks" && typeof topValue === "object" && topValue !== null) {
@@ -732,7 +741,7 @@ function applySettingsPatch(
         for (const ourEntry of eventEntries) {
           const command = extractCommand(ourEntry);
           const withoutOurs = command
-            ? withoutOurCommands(current, new Set([command]), matcherOf(ourEntry))
+            ? withoutOurCommands(current, new Set([command, ...olderCommands]), matcherOf(ourEntry))
             : current;
           current.length = 0;
           current.push(...withoutOurs);
@@ -808,6 +817,15 @@ function withoutOurCommands(groups: unknown[], commands: Set<string>, matcher?: 
     else if (kept.length > 0) out.push({ ...(group as Record<string, unknown>), hooks: kept });
   }
   return out;
+}
+
+function extractCommands(entry: unknown): string[] {
+  if (typeof entry !== "object" || entry === null) return [];
+  const hooks = (entry as { hooks?: unknown }).hooks;
+  if (!Array.isArray(hooks)) return [];
+  return hooks
+    .map((h) => (typeof h === "object" && h !== null ? (h as { command?: unknown }).command : null))
+    .filter((c): c is string => typeof c === "string");
 }
 
 function extractCommand(entry: unknown): string | null {
@@ -907,9 +925,43 @@ function fileEntriesOf(kit: Kit) {
  * copy ccpanel wrote, so setting it up again would bring it up to date.
  */
 export function kitHasUpdate(kit: Kit, repo: RepoInfo): boolean {
-  return fileEntriesOf(kit).some((entry) =>
+  const olderFile = fileEntriesOf(kit).some((entry) =>
     isOlderKitCopy(kit, entry.from, targetPathFor(kit, entry, repo)),
   );
+  return olderFile || hasOlderHookCommand(kit, repo);
+}
+
+/** Every hook command string in a settings file, whatever the event or group. */
+function hookCommandsIn(filePath: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return [];
+  }
+  const hooks =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as { hooks?: unknown }).hooks
+      : undefined;
+  if (typeof hooks !== "object" || hooks === null) return [];
+  const commands: string[] = [];
+  for (const groups of Object.values(hooks)) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups) {
+      const c = extractCommands(group);
+      commands.push(...c);
+    }
+  }
+  return commands;
+}
+
+/** True when settings still run a hook the way an earlier version of the kit wrote it. */
+function hasOlderHookCommand(kit: Kit, repo: RepoInfo): boolean {
+  return kit.installs.some((entry) => {
+    if (entry.kind !== "settings" || !entry.replacesCommands?.length) return false;
+    const older = new Set(entry.replacesCommands);
+    return hookCommandsIn(targetPathFor(kit, entry, repo)).some((c) => older.has(c));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1300,6 +1352,21 @@ export function postInstallCheck(kit: Kit, repo: RepoInfo): VerifyResult | null 
   return kit.id === "deletion-warning" ? verifyDeletionWarning(kit, repo) : null;
 }
 
+/**
+ * The hook command this kit has in settings now: today's, or one an earlier
+ * version wrote. Falls back to today's when settings can't be read.
+ */
+function installedHookCommand(kit: Kit, repo: RepoInfo): string {
+  const entry = kit.installs.find((e) => e.kind === "settings");
+  if (entry?.kind !== "settings") return "";
+  const current = Object.values((entry.patch["hooks"] as Record<string, unknown>) ?? {}).flatMap(
+    (groups) => (Array.isArray(groups) ? groups.flatMap(extractCommands) : []),
+  );
+  const ours = new Set([...current, ...(entry.replacesCommands ?? [])]);
+  const stored = hookCommandsIn(targetPathFor(kit, entry, repo)).find((c) => ours.has(c));
+  return stored ?? current[0] ?? "";
+}
+
 /** The line shown once a kit is set up. Kit-specific wording only where it is true. */
 export function installedMessage(kit: Kit): string {
   if (kit.id === "deletion-warning") {
@@ -1354,11 +1421,17 @@ export function verifyDeletionWarning(kit: Kit, repo: RepoInfo): VerifyResult {
   let fireDetail: string | null = "Couldn't try a test run.";
   if (executable && parser) {
     try {
-      const out = execFileSync(scriptPath as string, {
+      // Run the command exactly as it sits in settings, through a shell, the
+      // way Claude Code runs it. Running the script file directly would pass
+      // even when the command itself can't find it (a folder name with a
+      // space in it, with the variable left unquoted).
+      const out = execFileSync("/bin/sh", ["-c", installedHookCommand(kit, repo)], {
         input: JSON.stringify({
           tool_name: "Bash",
           tool_input: { command: "rm -rf /" },
         }),
+        cwd: repo.projectDir,
+        env: { ...process.env, CLAUDE_PROJECT_DIR: repo.projectDir },
         encoding: "utf8",
         timeout: 3000,
       });

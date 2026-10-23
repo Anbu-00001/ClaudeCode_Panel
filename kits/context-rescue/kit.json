@@ -9,10 +9,11 @@
     { "kind": "hook", "name": "save-before-forgetting", "from": "hooks/save-before-forgetting.sh",
       "to": ".claude/hooks/save-before-forgetting.sh", "executable": true },
     { "kind": "settings", "scope": "project",
+      "replacesCommands": [ "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-before-forgetting.sh" ],
       "patch": { "hooks": { "PreCompact": [ { "matcher": "auto",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-before-forgetting.sh" } ] },
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/save-before-forgetting.sh" } ] },
         { "matcher": "manual",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/save-before-forgetting.sh" } ] } ] } } }
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/save-before-forgetting.sh" } ] } ] } } }
   ],
   "tryThis": "Read .claude/where-we-got-to.md",
   "tryThisExplain": "After a long session, ask Claude that to pick up exactly where you left off.",

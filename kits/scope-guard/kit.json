@@ -9,8 +9,9 @@
     { "kind": "hook", "name": "guard-important-files", "from": "hooks/guard-important-files.sh",
       "to": ".claude/hooks/guard-important-files.sh", "executable": true },
     { "kind": "settings", "scope": "project",
+      "replacesCommands": [ "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-important-files.sh" ],
       "patch": { "hooks": { "PreToolUse": [ { "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-important-files.sh" } ] } ] } } },
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-important-files.sh" } ] } ] } } },
     { "kind": "claudemd", "blockId": "scope-guard",
       "content": "## Staying in scope\n\nOnly change the files needed for what was actually asked.\n\n- Do not rename, reformat, or reorganise anything that wasn't part of the request.\n- Do not \"tidy up\" nearby code while you're in a file.\n- If a fix seems to need changes elsewhere, say so and ask first.\n- If a request is ambiguous, ask rather than picking the broader reading." }
   ],

@@ -321,8 +321,9 @@ Two properties that matter:
 - **`disableAllHooks: true` in any scope turns them all off**, along with any custom status
   line. Detect this before installing a hook-based kit.
 
-`${CLAUDE_PROJECT_DIR}` resolves in hook commands, so reference scripts by that rather than a
-relative path.
+`$CLAUDE_PROJECT_DIR` resolves in hook commands, so reference scripts by that rather than a
+relative path, and keep it in double quotes: the command runs through a shell, and an unquoted
+path with a space in it splits into two words.
 
 ### 5.5 What has no clean per-item switch
 
@@ -706,11 +707,12 @@ The settings patch, written to project scope so a team can share it:
 { "hooks": { "PreToolUse": [ {
     "matcher": "Bash|Edit|Write",
     "hooks": [ { "type": "command",
-                 "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/warn-before-delete.sh" } ]
+                 "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/warn-before-delete.sh" } ]
 } ] } }
 ```
 
-Use `${CLAUDE_PROJECT_DIR}` so the path resolves wherever the session starts. `chmod +x` the
+Use `"$CLAUDE_PROJECT_DIR"` (quoted) so the path resolves wherever the session starts, even in a
+folder whose name has a space. `chmod +x` the
 script on install and verify it is executable — a non-executable hook fails silently, which
 is the worst possible outcome for a safety feature.
 

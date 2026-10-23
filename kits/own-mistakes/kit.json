@@ -11,8 +11,9 @@
     { "kind": "hook", "name": "check-my-work", "from": "hooks/check-my-work.sh",
       "to": ".claude/hooks/check-my-work.sh", "executable": true },
     { "kind": "settings", "scope": "project",
+      "replacesCommands": [ "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-my-work.sh" ],
       "patch": { "hooks": { "PostToolUse": [ { "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-my-work.sh" } ] } ] } } }
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-my-work.sh" } ] } ] } } }
   ],
   "tryThis": "Ask Claude to make a small change that won't compile",
   "tryThisExplain": "It should notice and fix it in the same reply, without you pointing it out.",
