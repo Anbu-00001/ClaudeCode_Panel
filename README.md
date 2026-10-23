@@ -72,7 +72,8 @@ These are guarantees, not aspirations. Each one has tests.
   stray comma kills every permission rule and hook you had. So every write reads, parses, snapshots,
   validates, writes to a temp file, renames atomically, then re-reads to confirm. A file that
   doesn't parse is never overwritten, a change that would leave a value Claude Code rejects is
-  refused, and a file reached through a symlink is written where the link points.
+  refused, and a file reached through a symlink is written where the link points, unless a project
+file links to somewhere outside the project, which is refused.
 - **What it sets up, it can take back out.** Every kit uninstalls exactly what it added: a
   permission you already had, or one another installed kit still uses, stays put, and a kit file
   you have edited since is kept and named rather than deleted. A tool entry is only removed if
@@ -85,8 +86,11 @@ These are guarantees, not aspirations. Each one has tests.
 - **Secrets are masked** before they reach the screen or the logs.
 
 Verified by test, not by assertion: killing the process mid-write 20 times leaves the target file
-complete-old or complete-new, never truncated; installing and uninstalling a kit leaves unrelated
-settings byte-identical, including keys ccpanel has never heard of and the file's own indentation.
+complete-old or complete-new, never truncated; installing and uninstalling a kit leaves every
+setting it doesn't touch with the same value, including keys ccpanel has never heard of, and the
+file keeps its own indentation. The rest of the file's formatting may be tidied on the way: a
+one-line object is spread over several lines, escaped characters are written plainly, and a
+number like `30.0` comes back as `30`.
 
 Built on Linux, and the test suite runs on both Linux and macOS in CI. Windows isn't supported.
 
