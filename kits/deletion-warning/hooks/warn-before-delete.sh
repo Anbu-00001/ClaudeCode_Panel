@@ -87,6 +87,12 @@ esac
 COMMAND=$(extract '.tool_input.command' 'o.tool_input&&o.tool_input.command' 'o.get("tool_input",{}).get("command")')
 FILE_PATH=$(extract '.tool_input.file_path' 'o.tool_input&&o.tool_input.file_path' 'o.get("tool_input",{}).get("file_path")')
 
+# Claude's shell keeps its own working directory between commands, and Claude
+# Code reports it as "cwd". Relative paths in the command mean that folder,
+# not wherever this hook happened to start.
+HOOK_CWD=$(extract '.cwd' 'o.cwd' 'o.get("cwd")')
+if [ -n "$HOOK_CWD" ] && [ -d "$HOOK_CWD" ]; then cd -- "$HOOK_CWD" 2>/dev/null; fi
+
 # ---------------------------------------------------------------------------
 # Reply helpers
 # ---------------------------------------------------------------------------
@@ -165,9 +171,15 @@ safe_git() {
 }
 
 # Anything git already ignores is build output by definition.
+# Asked from the path's own folder, because a `cd` earlier in the command can
+# put it in a different repository from the one the hook runs in.
 is_git_ignored() {
+  local p="$1" dir
   command -v git >/dev/null 2>&1 || return 1
-  safe_git check-ignore -q -- "$1" 2>/dev/null
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  dir=$(dirname -- "$p")
+  [ -d "$dir" ] || return 1
+  safe_git -C "$dir" check-ignore -q -- "$p" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -394,24 +406,77 @@ tokenize() {
   flush_word
 }
 
+# Applies one `cd` argument to CDIR, the folder later commands run in ("" is
+# the folder the command starts in). Anything we can't know in advance -
+# `cd -`, `cd $DIR` - sets CD_UNKNOWN instead.
+apply_cd() {
+  local arg="$1" unres="$2"
+  if [ "$unres" = "1" ] || [ "$arg" = "-" ]; then
+    CD_UNKNOWN=1
+    return 0
+  fi
+  case "$arg" in
+    /*) CDIR="$arg" ;;
+    *) CDIR="${CDIR:+$CDIR/}$arg" ;;
+  esac
+  return 0
+}
+
 # From WORDS, collects the arguments of every rm in the command into
 # TARGETS[] (with TUNRES[] / TGLOB[] alongside) and sets RECURSIVE.
+#
+# It also follows `cd` (and `pushd`) through the command, so the rm in
+# `cd sub && rm -rf data` is judged as sub/data: TDIR[] holds the folder each
+# target is relative to, and TCDUNK[] is 1 when an earlier cd went somewhere
+# only known at run time. A `( ... )` subshell's cd ends at its `)`.
 collect_rm_targets() {
-  local i=0 n=${#WORDS[@]} w at_start=1 in_rm=0 flags_done=0
+  local i=0 n=${#WORDS[@]} w at_start=1 in_rm=0 in_cd=0 flags_done=0
+  local -a cd_stack unk_stack
   TARGETS=()
   TUNRES=()
   TGLOB=()
+  TDIR=()
+  TCDUNK=()
   RECURSIVE=0
+  CDIR=""
+  CD_UNKNOWN=0
+  cd_stack=()
+  unk_stack=()
   while [ "$i" -lt "$n" ]; do
     w=${WORDS[$i]}
     if [ "${WSEP[$i]}" = "1" ]; then
+      # `cd` with nothing after it goes home.
+      if [ "$in_cd" -eq 1 ]; then
+        if [ -n "${HOME:-}" ]; then CDIR="$HOME"; else CD_UNKNOWN=1; fi
+      fi
+      case "$w" in
+        '(')
+          cd_stack+=("$CDIR")
+          unk_stack+=("$CD_UNKNOWN")
+          ;;
+        ')')
+          if [ "${#cd_stack[@]}" -gt 0 ]; then
+            CDIR=${cd_stack[${#cd_stack[@]}-1]}
+            CD_UNKNOWN=${unk_stack[${#unk_stack[@]}-1]}
+            unset "cd_stack[${#cd_stack[@]}-1]"
+            unset "unk_stack[${#unk_stack[@]}-1]"
+          fi
+          ;;
+      esac
       at_start=1
       in_rm=0
+      in_cd=0
     elif [ "$at_start" -eq 1 ]; then
       case "$w" in
         sudo | command | builtin | nice | *=*) ;; # still before the command name
         rm | */rm) in_rm=1; flags_done=0; at_start=0 ;;
+        cd | pushd) in_cd=1; at_start=0 ;;
         *) at_start=0 ;;
+      esac
+    elif [ "$in_cd" -eq 1 ]; then
+      case "$w" in
+        -L | -P | -e | -@) ;; # cd's own options
+        *) apply_cd "$w" "${WUNRES[$i]}"; in_cd=0 ;;
       esac
     elif [ "$in_rm" -eq 1 ]; then
       if [ "$flags_done" -eq 0 ] && [ "$w" = "--" ]; then
@@ -426,10 +491,91 @@ collect_rm_targets() {
         TARGETS+=("$w")
         TUNRES+=("${WUNRES[$i]}")
         TGLOB+=("${WGLOB[$i]}")
+        TDIR+=("$CDIR")
+        TCDUNK+=("$CD_UNKNOWN")
       fi
     fi
     i=$((i + 1))
   done
+  [ "$in_cd" -eq 1 ] && CD_UNKNOWN=1
+  return 0
+}
+
+# Looks through WORDS for the deletes that never spell out `rm <path>`:
+# `find ... -delete`, `find ... -exec rm ...`, and `... | xargs rm`. Sets
+# FIND_DELETE / XARGS_RM, and FIND_ROOTS[] to the folders find starts from
+# (relative ones already joined to any `cd` before them).
+collect_indirect_deletes() {
+  local i=0 n=${#WORDS[@]} w at_start=1 in_find=0 roots_done=0 in_xargs=0 in_cd=0 skip=0 exec_next=0
+  local -a roots
+  FIND_DELETE=0
+  XARGS_RM=0
+  FIND_ROOTS=()
+  CDIR=""
+  CD_UNKNOWN=0
+  roots=()
+  while [ "$i" -lt "$n" ]; do
+    w=${WORDS[$i]}
+    if [ "${WSEP[$i]}" = "1" ]; then
+      if [ "$in_find" -eq 1 ] && [ "$FIND_DELETE" -eq 1 ] && [ "${#FIND_ROOTS[@]}" -eq 0 ]; then
+        FIND_ROOTS=("${roots[@]}")
+        [ "${#FIND_ROOTS[@]}" -eq 0 ] && FIND_ROOTS=("${CDIR:-.}")
+      fi
+      at_start=1; in_find=0; in_xargs=0; in_cd=0; exec_next=0
+    elif [ "$at_start" -eq 1 ]; then
+      case "$w" in
+        sudo | command | builtin | nice | *=*) ;;
+        find | */find) in_find=1; roots_done=0; roots=(); at_start=0 ;;
+        xargs | */xargs) in_xargs=1; skip=0; at_start=0 ;;
+        cd | pushd) in_cd=1; at_start=0 ;;
+        *) at_start=0 ;;
+      esac
+    elif [ "$in_cd" -eq 1 ]; then
+      case "$w" in -L | -P | -e | -@) ;; *) apply_cd "$w" "${WUNRES[$i]}"; in_cd=0 ;; esac
+    elif [ "$in_find" -eq 1 ]; then
+      if [ "$exec_next" -eq 1 ]; then
+        case "$w" in rm | */rm | unlink | */unlink | shred | */shred) FIND_DELETE=1 ;; esac
+        exec_next=0
+      fi
+      if [ "$roots_done" -eq 0 ]; then
+        case "$w" in
+          -* | '(' | '!') roots_done=1 ;;
+          *)
+            if [ "${WUNRES[$i]}" = "1" ] || [ "$CD_UNKNOWN" -eq 1 ]; then
+              roots+=("?")
+            else
+              case "$w" in
+                /*) roots+=("$w") ;;
+                *) roots+=("${CDIR:+$CDIR/}$w") ;;
+              esac
+            fi
+            ;;
+        esac
+      fi
+      case "$w" in
+        -delete) FIND_DELETE=1 ;;
+        -exec | -execdir | -ok | -okdir) exec_next=1 ;;
+      esac
+    elif [ "$in_xargs" -eq 1 ]; then
+      if [ "$skip" -eq 1 ]; then
+        skip=0
+      else
+        case "$w" in
+          -I | -n | -P | -L | -s | -d | -E | -a) skip=1 ;; # options that take a value
+          -*) ;;
+          sudo) ;;
+          rm | */rm | unlink | */unlink | shred | */shred) XARGS_RM=1; in_xargs=0 ;;
+          *) in_xargs=0 ;;
+        esac
+      fi
+    fi
+    i=$((i + 1))
+  done
+  if [ "$in_find" -eq 1 ] && [ "$FIND_DELETE" -eq 1 ] && [ "${#FIND_ROOTS[@]}" -eq 0 ]; then
+    FIND_ROOTS=("${roots[@]}")
+    [ "${#FIND_ROOTS[@]}" -eq 0 ] && FIND_ROOTS=("${CDIR:-.}")
+  fi
+  return 0
 }
 
 # True for the targets that wipe a disk or a whole home folder.
@@ -534,6 +680,41 @@ if printf '%s' "$CMD" | grep -qE 'git +push +.*(--force|-f)( |$)'; then
   esac
 fi
 
+# --- find -delete, find -exec rm, xargs rm ----------------------------------
+# These delete a list of files that only exists when the command runs, so we
+# can't count it. Ask, unless find is only clearing build output.
+if printf '%s' "$CMD" | grep -qE '(^|[;&|(] *)(sudo +)?([^ ;&|]*/)?(find|xargs)( |$)'; then
+  if [ "${#CMD}" -gt "$MAX_PARSE_CHARS" ]; then
+    if printf '%s' "$CMD" | grep -qE ' -delete( |$)| -(exec|execdir|ok|okdir) +([^ ]*/)?(rm|unlink|shred)( |$)|xargs .*([^ ]*/)?(rm|unlink|shred)( |$)'; then
+      respond_ask \
+        "This deletes files from a command too long to check here." \
+        "Have a look at what it removes before saying yes."
+    fi
+  else
+    tokenize "$CMD"
+    collect_indirect_deletes
+    if [ "$XARGS_RM" -eq 1 ]; then
+      respond_ask \
+        "This deletes whatever list of files is piped into it." \
+        "That list only exists when the command runs, so check what produces it before saying yes."
+    fi
+    if [ "$FIND_DELETE" -eq 1 ]; then
+      ROUTINE=1
+      for p in "${FIND_ROOTS[@]}"; do
+        if [ "$p" = "?" ] || { ! is_ignorable_path "$p" && ! is_git_ignored "$p"; }; then
+          ROUTINE=0
+          break
+        fi
+      done
+      if [ "$ROUTINE" -eq 0 ]; then
+        respond_ask \
+          "This deletes every file that find matches, which can't be counted ahead of time." \
+          "Run the same find without the delete part first to see what it would remove."
+      fi
+    fi
+  fi
+fi
+
 # --- rm ---------------------------------------------------------------------
 if printf '%s' "$CMD" | grep -qE '(^|[;&|(] *)(sudo +)?([^ ;&|]*/)?rm( |$)'; then
 
@@ -564,13 +745,26 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|(] *)(sudo +)?([^ ;&|]*/)?rm( |$)'; the
   # directory the command will run in.
   PATHS=()
   UNRESOLVED=0
+  CD_UNRESOLVED=0
   i=0
   while [ "$i" -lt "${#TARGETS[@]}" ]; do
     t=${TARGETS[$i]}
+    # A relative path after a `cd` means a path inside that folder.
+    case "$t" in
+      /*) ;;
+      *)
+        if [ "${TCDUNK[$i]}" = "1" ]; then
+          CD_UNRESOLVED=1
+          i=$((i + 1))
+          continue
+        fi
+        [ -n "${TDIR[$i]}" ] && t="${TDIR[$i]%/}/$t"
+        ;;
+    esac
     if [ "${TUNRES[$i]}" = "1" ]; then
       UNRESOLVED=1
     else
-      if is_catastrophic_target "$t"; then
+      if is_catastrophic_target "$t" || is_catastrophic_target "${TARGETS[$i]}"; then
         respond_ask \
           "This tries to delete your whole home folder or the whole disk." \
           "That is almost certainly not what was meant." \
@@ -596,6 +790,14 @@ EOF_GLOB
     respond_ask \
       "This deletes a folder whose name is only filled in when the command runs." \
       "Make sure you know where it points before saying yes."
+  fi
+
+  # Same for a recursive delete after a `cd` we can't follow: we don't know
+  # which folder the path is inside.
+  if [ "$CD_UNRESOLVED" -eq 1 ] && [ "$RECURSIVE" -eq 1 ]; then
+    respond_ask \
+      "This deletes a folder after moving into a directory that's only known when the command runs." \
+      "Make sure you know which folder it ends up in before saying yes."
   fi
 
   COUNT=${#PATHS[@]}

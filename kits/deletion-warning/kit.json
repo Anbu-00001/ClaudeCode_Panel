@@ -39,6 +39,6 @@
   "tryThis": "rm -rf src/",
   "tryThisExplain": "Ask Claude to delete a folder you care about. It should stop and check with you first.",
   "explain": "Claude can run commands on your computer, and some of them can't be taken back. This watches for the dangerous ones and makes Claude pause and ask you before it goes ahead. It only speaks up when something is genuinely hard to undo, so it stays quiet during normal work.",
-  "honestLimit": "This catches common destructive commands. It won't catch everything — treat it as a seatbelt, not a wall.",
+  "honestLimit": "This catches common destructive commands, including a delete after changing folders and bulk deletes with find or xargs. It can't see inside scripts or programs a command starts, or commands pieced together while they run, and it treats a folder git ignores entirely as build output that can be rebuilt. Treat it as a seatbelt, not a wall.",
   "uninstallNote": null
 }

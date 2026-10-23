@@ -421,3 +421,55 @@ describe("files git ignores are never called saved", () => {
     expect(reasonOf(out)).toContain("Apart from build output that can be rebuilt");
   });
 });
+
+describe("deletes that don't name their path up front", () => {
+  beforeEach(() => {
+    fs.mkdirSync(path.join(repo, "sub", "data"), { recursive: true });
+    for (let i = 1; i <= 3; i++)
+      fs.writeFileSync(path.join(repo, "sub", "data", `f${i}`), `${i}\n`);
+    execSync("git add -A && git commit -qm sub", { cwd: repo });
+  });
+
+  it("follows a cd before rm, so the folder inside it is checked", () => {
+    const out = bash("cd sub && rm -rf data");
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("3 files");
+  });
+
+  it("forgets a cd made inside ( ... ) once the subshell ends", () => {
+    expect(warns(bash("(cd sub && ls); rm -rf data"))).toBe(false);
+  });
+
+  it("asks when a recursive delete follows a cd to somewhere only known at run time", () => {
+    const out = bash('cd "$TARGET" && rm -rf data');
+    expect(warns(out)).toBe(true);
+    expect(reasonOf(out)).toContain("only known when the command runs");
+  });
+
+  it("uses the working directory Claude Code reports", () => {
+    const out = run({
+      tool_name: "Bash",
+      cwd: path.join(repo, "sub"),
+      tool_input: { command: "rm -rf data" },
+    });
+    expect(reasonOf(out)).toContain("3 files");
+  });
+
+  for (const cmd of [
+    "find . -name '*.ts' -delete",
+    "find src -type f -exec rm {} \\;",
+    "find src -type f -exec /bin/rm -f {} +",
+    "git ls-files | xargs rm -rf",
+    "find . -print0 | xargs -0 -n 5 rm",
+  ]) {
+    it(`asks before: ${cmd}`, () => {
+      expect(warns(bash(cmd))).toBe(true);
+    });
+  }
+
+  for (const cmd of ["find . -name '*.ts'", "ls | xargs echo", "find node_modules -delete"]) {
+    it(`stays quiet on: ${cmd}`, () => {
+      expect(warns(bash(cmd))).toBe(false);
+    });
+  }
+});
