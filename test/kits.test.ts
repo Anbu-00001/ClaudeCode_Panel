@@ -172,6 +172,30 @@ describe("install and uninstall", () => {
     expect(after.hooks.PreToolUse[0].hooks[0].command).toBe("theirs.sh");
   });
 
+  it("keeps a user's own command that shares a group with the kit's", () => {
+    const settingsPath = path.join(repoDir, ".claude", "settings.json");
+    installKit(kit(), repo(), appendUndoEntry);
+    const installed = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    const group = installed.hooks.PreToolUse[0];
+    group.hooks.push({ type: "command", command: "theirs.sh" });
+    fs.writeFileSync(settingsPath, serializeJson(installed));
+
+    // Setting it up again (an update) keeps theirs.
+    installKit(kit(), repo(), appendUndoEntry);
+    const updated = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    const commands = updated.hooks.PreToolUse.flatMap((g: { hooks: Array<{ command: string }> }) =>
+      g.hooks.map((h) => h.command),
+    );
+    expect(commands).toContain("theirs.sh");
+    expect(commands.filter((c: string) => c.includes("warn-before-delete"))).toHaveLength(1);
+
+    uninstallKit(kit(), repo(), appendUndoEntry);
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    expect(after.hooks.PreToolUse).toEqual([
+      { matcher: "Bash|Edit|Write", hooks: [{ type: "command", command: "theirs.sh" }] },
+    ]);
+  });
+
   it("records the install as one undo entry", () => {
     installKit(kit(), repo(), appendUndoEntry);
     const entries = readUndoLogNewestFirst();

@@ -731,10 +731,9 @@ function applySettingsPatch(
 
         for (const ourEntry of eventEntries) {
           const command = extractCommand(ourEntry);
-          const matcher = matcherOf(ourEntry);
-          const withoutOurs = current.filter(
-            (e) => !(command && isOurHookEntry(e, command, matcher)),
-          );
+          const withoutOurs = command
+            ? withoutOurCommands(current, new Set([command]), matcherOf(ourEntry))
+            : current;
           current.length = 0;
           current.push(...withoutOurs);
           if (mode === "install") current.push(ourEntry);
@@ -778,6 +777,37 @@ function applySettingsPatch(
     if (mode === "install") draft[topKey] = topValue;
     else delete draft[topKey];
   }
+}
+
+/**
+ * Takes the kit's own command objects out of a list of hook groups.
+ *
+ * A group is `{ matcher, hooks: [...] }`, and the user may have added their
+ * own command to the same group as ours. Dropping the whole group would
+ * delete theirs too, so only our command objects go; a group is dropped
+ * only once nothing is left in it.
+ */
+function withoutOurCommands(groups: unknown[], commands: Set<string>, matcher?: string): unknown[] {
+  const out: unknown[] = [];
+  for (const group of groups) {
+    const hooks =
+      typeof group === "object" && group !== null
+        ? (group as { hooks?: unknown }).hooks
+        : undefined;
+    const sameMatcher = matcher === undefined || matcherOf(group) === matcher;
+    if (!Array.isArray(hooks) || !sameMatcher) {
+      out.push(group);
+      continue;
+    }
+    const kept = hooks.filter((h) => {
+      const c =
+        typeof h === "object" && h !== null ? (h as { command?: unknown }).command : undefined;
+      return !(typeof c === "string" && commands.has(c));
+    });
+    if (kept.length === hooks.length) out.push(group);
+    else if (kept.length > 0) out.push({ ...(group as Record<string, unknown>), hooks: kept });
+  }
+  return out;
 }
 
 function extractCommand(entry: unknown): string | null {
