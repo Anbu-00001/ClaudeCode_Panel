@@ -19,10 +19,9 @@ import { resolveOptions, type SkillUpdateCheck, type UpdateOptions } from "./upd
  *
  * Three rules shape everything below.
  *
- * C1 — no Anthropic API, no money, and (with one exception) no network at all.
- * Everything here is arithmetic over local files plus read-only `git`/`--version`
- * calls against binaries already installed. `fetchGitRemote` is the single
- * network call in the module and it only ever runs when the user asks for it.
+ * C1 — no Anthropic API, no money, and no network at all. Everything here is
+ * arithmetic over local files plus read-only `git`/`--version` calls against
+ * binaries already installed.
  *
  * UNKNOWN is a first-class answer. Most marketplace catalogue entries carry no
  * version at all, and local git refs go stale the moment someone pushes. Where
@@ -43,11 +42,9 @@ export {
   findOnPath,
 } from "./updates/exec.js";
 export {
-  fetchGitRemote,
   findSkillRepoRoot,
   GIT_HARDENING_ARGS,
   GIT_HARDENING_ENV,
-  type GitFetchOutcome,
 } from "./updates/git.js";
 export { findSelfUpdateSubcommand, findVersionMarker, type VersionMarker } from "./updates/tool.js";
 export {

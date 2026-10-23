@@ -38,8 +38,6 @@ export type ExecRunner = (
 
 /** Long enough for a cold `--version`, short enough not to hang the screen. */
 export const DEFAULT_TIMEOUT_MS = 4_000;
-/** A fetch talks to a server, so it gets a longer leash than a local call. */
-export const FETCH_TIMEOUT_MS = 20_000;
 export const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export const defaultExec: ExecRunner = (file, args, options = {}) =>

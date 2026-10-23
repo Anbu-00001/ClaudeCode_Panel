@@ -13,7 +13,6 @@ import {
   type ExecResult,
   type ExecRunner,
   extractVersion,
-  fetchGitRemote,
   findOnPath,
   findSelfUpdateSubcommand,
   findSkillRepoRoot,
@@ -761,51 +760,6 @@ describe("a clone someone else wrote the config for", () => {
       expect(call.args.slice(0, GIT_HARDENING_ARGS.length)).toEqual([...GIT_HARDENING_ARGS]);
       expect(call.options?.env).toEqual(GIT_HARDENING_ENV);
     }
-  });
-});
-
-describe("checking the remote on purpose", () => {
-  it("is the one call that touches the network, and reports what it ran", async () => {
-    const stub = makeExec(() => "");
-    const outcome = await fetchGitRemote("/some/repo", {
-      exec: stub.exec,
-      home: fakeHome,
-      env: emptyEnv,
-    });
-
-    expect(outcome.ok).toBe(true);
-    const args = [...GIT_HARDENING_ARGS, "-C", "/some/repo", "fetch", "--quiet"];
-    expect(outcome.argv).toEqual(["git", ...args]);
-    expect(stub.calls[0]?.args).toEqual(args);
-    expect(stub.calls[0]?.options?.env).toEqual(GIT_HARDENING_ENV);
-  });
-
-  it("treats a missing git as an answer, not a crash", async () => {
-    const stub = makeExec(() => ({ ok: false, failure: "missing", code: null }));
-    const outcome = await fetchGitRemote("/some/repo", {
-      exec: stub.exec,
-      home: fakeHome,
-      env: emptyEnv,
-    });
-
-    expect(outcome.ok).toBe(false);
-    expect(outcome.message).toContain("isn't installed");
-  });
-
-  it("passes on what git complained about", async () => {
-    const stub = makeExec(() => ({
-      ok: false,
-      code: 128,
-      stderr: "fatal: could not read from remote\nmore",
-    }));
-    const outcome = await fetchGitRemote("/some/repo", {
-      exec: stub.exec,
-      home: fakeHome,
-      env: emptyEnv,
-    });
-
-    expect(outcome.ok).toBe(false);
-    expect(outcome.message).toBe("fatal: could not read from remote");
   });
 });
 

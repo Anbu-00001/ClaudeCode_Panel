@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SkillInfo } from "../skills.js";
-import { type ExecRunner, FETCH_TIMEOUT_MS } from "./exec.js";
+import type { ExecRunner } from "./exec.js";
 import {
   type GitUpdateCheck,
   type ResolvedOptions,
@@ -193,35 +193,4 @@ export async function checkGit(
     lastFetchedAt,
     refsAreFresh,
   };
-}
-
-export interface GitFetchOutcome {
-  ok: boolean;
-  /** Exactly what ran, so the UI can show it before and after (C5). */
-  argv: string[];
-  message: string;
-}
-
-/**
- * THE ONLY NETWORK CALL IN THIS MODULE, and the only one in ccpanel outside
- * the MCP registry search (C1). Never called by `checkSkillUpdate`; the UI has
- * to ask for it because the user asked for it. It fetches refs and writes
- * nothing to the working tree, so a fetch can never lose work.
- */
-export async function fetchGitRemote(
-  repoRoot: string,
-  options?: UpdateOptions,
-): Promise<GitFetchOutcome> {
-  const resolved = resolveOptions(options);
-  const argv = ["git", ...gitArgs(repoRoot, ["fetch", "--quiet"])];
-  const result = await resolved.exec("git", argv.slice(1), {
-    timeoutMs: FETCH_TIMEOUT_MS,
-    env: GIT_HARDENING_ENV,
-  });
-  if (result.ok) return { ok: true, argv, message: "Checked the remote." };
-  if (result.failure === "missing") return { ok: false, argv, message: "git isn't installed." };
-  if (result.failure === "timeout")
-    return { ok: false, argv, message: "The remote didn't answer in time." };
-  const reason = (result.stderr.trim() || result.stdout.trim()).split("\n")[0] ?? "git refused.";
-  return { ok: false, argv, message: reason };
 }

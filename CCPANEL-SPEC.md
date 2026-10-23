@@ -192,8 +192,8 @@ Violating any of these is a failed build.
 
 **C1 — The app never spends the user's money.** Zero calls to any Anthropic API. No model
 calls, no telemetry, no AI-generated recommendations. Every number is arithmetic over local
-files. Permitted network calls: the MCP registry search API (§10.4) and `npx`/`npm` during an
-install the user explicitly started.
+files. Permitted network calls: `npx`/`npm` during an install the user explicitly started, and
+the pinned ccusage download (plus its public price list) when the Spending screen opens.
 
 **C2 — The app never runs a Claude Code prompt itself.** When a kit says "try this now", the
 app copies the command or exits and `exec`s `claude` with it pre-filled. It never runs
@@ -424,7 +424,6 @@ ccpanel/
 │   │   ├── undo.ts
 │   │   ├── validate.ts         # zod schemas
 │   │   ├── ccusage.ts
-│   │   ├── registry.ts
 │   │   └── mask.ts
 │   └── data/
 │       ├── commands.json       # §11.2
@@ -1117,7 +1116,6 @@ Done when all of these pass on Linux.
 | Warning fatigue in kit #11 |  Keep the pattern list tight; test the silences (#13) as hard as the alerts. |
 | Kits feel patronising to experienced users | `--expert` flag skips explanations. Never nag. |
 | We duplicate `/doctor` | Don't. Point at it. |
-| MCP registry is in preview and may break | Timeout + graceful failure; the rest of the app works without it. |
 | Writing `~/.claude.json` corrupts an OAuth session | v1 never writes it, except the one guarded per-folder server switch recorded in §5.1. Don't add another without a redesign. |
 | The writing is mediocre | The single biggest failure mode. Test #20 is the gate. |
 
