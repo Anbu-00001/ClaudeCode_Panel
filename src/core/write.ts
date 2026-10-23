@@ -100,10 +100,14 @@ function currentMode(filePath: string): number | null {
  * §12.5 says we can't lock.
  */
 export function atomicWriteFile(
-  filePath: string,
+  requestedPath: string,
   contents: string,
   opts: { mode?: number } = {},
 ): void {
+  // Renaming over a symlink would replace the link itself with a plain file,
+  // cutting it off from wherever the user keeps the real one (a dotfiles
+  // repo, say). Write next to the real file instead, so the link survives.
+  const filePath = followSymlink(requestedPath);
   const dir = path.dirname(filePath);
   ensureDir(dir);
 
@@ -139,6 +143,23 @@ export function atomicWriteFile(
       /* ignore */
     }
     throw err;
+  }
+}
+
+/** The file a symlink points to (through any chain of links), or the path itself. */
+function followSymlink(filePath: string): string {
+  let isLink = false;
+  try {
+    isLink = fs.lstatSync(filePath).isSymbolicLink();
+  } catch {
+    return filePath; // nothing there yet: an ordinary new file
+  }
+  if (!isLink) return filePath;
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    // A link to a file that doesn't exist yet: create it where the link points.
+    return path.resolve(path.dirname(filePath), fs.readlinkSync(filePath));
   }
 }
 

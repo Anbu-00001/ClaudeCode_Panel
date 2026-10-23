@@ -61,6 +61,51 @@ describe("atomicWriteFile", () => {
     expect(fs.statSync(target).mode & 0o777).toBe(0o600);
   });
 
+  it("writes through a symlinked settings.local.json, keeping the link", () => {
+    const dotfiles = path.join(workDir, "dotfiles");
+    fs.mkdirSync(dotfiles);
+    const real = path.join(dotfiles, "claude-local.json");
+    fs.writeFileSync(real, serializeJson({ keep: 1 }));
+    const link = path.join(workDir, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(link));
+    fs.symlinkSync(real, link);
+
+    const result = runTransaction(
+      [
+        {
+          kind: "patchJson",
+          filePath: link,
+          keyPath: ["permissions"],
+          mutate: (d) => {
+            d["permissions"] = { allow: ["Bash(ls *)"] };
+          },
+        },
+      ],
+      meta,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(fs.readFileSync(real, "utf8"))).toEqual({
+      keep: 1,
+      permissions: { allow: ["Bash(ls *)"] },
+    });
+    // The temp file went next to the real file, and didn't stay behind.
+    expect(fs.readdirSync(dotfiles)).toEqual(["claude-local.json"]);
+  });
+
+  it("creates the file a dangling symlink points to", () => {
+    const real = path.join(workDir, "elsewhere", "new.json");
+    fs.mkdirSync(path.dirname(real));
+    const link = path.join(workDir, "link.json");
+    fs.symlinkSync(real, link);
+
+    atomicWriteFile(link, serializeJson({ a: 1 }));
+
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(fs.readFileSync(real, "utf8"))).toEqual({ a: 1 });
+  });
+
   it("leaves no temp files behind", () => {
     const target = path.join(workDir, "settings.json");
     atomicWriteFile(target, serializeJson({ a: 1 }));
