@@ -4,13 +4,14 @@ import { Footer, type FooterHint } from "../components/Footer.js";
 import { List, type ListItem } from "../components/List.js";
 import { Preview } from "../components/Preview.js";
 import {
+  installedMessage,
   installKit,
   isKitInstalled,
   type Kit,
+  postInstallCheck,
   previewKit,
   uninstallKit,
   type VerifyResult,
-  verifyDeletionWarning,
 } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 import { appendUndoEntry } from "../core/undo.js";
@@ -48,7 +49,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
       return;
     }
     setAlreadyInstalled(true);
-    setVerify(verifyDeletionWarning(kit, repo));
+    setVerify(postInstallCheck(kit, repo));
     setStage("done");
   }
 
@@ -109,7 +110,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
         <Box flexDirection="column" paddingX={1} paddingY={1}>
           {alreadyInstalled ? (
             <>
-              <Text color="green">Done. Claude will check with you before big deletions now.</Text>
+              <Text color="green">{installedMessage(kit)}</Text>
 
               {verify ? (
                 <Box flexDirection="column" marginTop={1}>

@@ -666,6 +666,24 @@ function hasJsonParser(): boolean {
 }
 
 /**
+ * The self-check to run straight after installing `kit`, or null when the kit
+ * has none. Only the deletion warning has one: it fires a pretend `rm -rf /`
+ * through its hook, and running that test against any other kit would show
+ * a page of red crosses for a check that kit was never meant to pass.
+ */
+export function postInstallCheck(kit: Kit, repo: RepoInfo): VerifyResult | null {
+  return kit.id === "deletion-warning" ? verifyDeletionWarning(kit, repo) : null;
+}
+
+/** The line shown once a kit is set up. Kit-specific wording only where it is true. */
+export function installedMessage(kit: Kit): string {
+  if (kit.id === "deletion-warning") {
+    return "Done. Claude will check with you before big deletions now.";
+  }
+  return `Done. ${kit.title} is set up.`;
+}
+
+/**
  * Fires a synthetic destructive call through the installed hook and confirms
  * it asks. Without this, a hook that silently does nothing looks identical to
  * one that works — the worst outcome for a safety feature.
