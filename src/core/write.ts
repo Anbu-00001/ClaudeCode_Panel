@@ -358,28 +358,48 @@ export function describeParseError(filePath: string, err: unknown): ParseFailure
 }
 
 /** Serialized to match Claude Code's own style: 2-space indent, trailing newline. */
-export function serializeJson(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
+export function serializeJson(
+  value: unknown,
+  style: JsonStyle = { indent: "  ", trailingNewline: true },
+): string {
+  return `${JSON.stringify(value, null, style.indent)}${style.trailingNewline ? "\n" : ""}`;
+}
+
+export interface JsonStyle {
+  indent: string;
+  trailingNewline: boolean;
+}
+
+/**
+ * How an existing file is laid out, so a one-key change doesn't reformat a
+ * file someone keeps at 4 spaces or tabs into a whole-file diff. The indent
+ * is read from the first indented line; a file with none (empty, or all on
+ * one line) gets Claude Code's 2 spaces.
+ */
+export function detectJsonStyle(raw: string): JsonStyle {
+  const indent = /\n([ \t]+)\S/.exec(raw)?.[1] ?? "  ";
+  return { indent, trailingNewline: raw.length === 0 || raw.endsWith("\n") };
 }
 
 function readJsonForWrite(
   filePath: string,
 ):
-  | { status: "ok"; value: Record<string, unknown>; existed: boolean }
+  | { status: "ok"; value: Record<string, unknown>; existed: boolean; style: JsonStyle }
   | { status: "unparseable"; failure: ParseFailure } {
   let raw: string;
   try {
     raw = fs.readFileSync(filePath, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return { status: "ok", value: {}, existed: false };
+      return { status: "ok", value: {}, existed: false, style: detectJsonStyle("") };
     }
     throw err;
   }
+  const style = detectJsonStyle(raw.trim() === "" ? "" : raw);
 
   // An empty or whitespace-only file is treated as {} rather than a parse
   // failure: Claude Code tolerates it, and routing to Repair would be noise.
-  if (raw.trim() === "") return { status: "ok", value: {}, existed: true };
+  if (raw.trim() === "") return { status: "ok", value: {}, existed: true, style };
 
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -394,7 +414,7 @@ function readJsonForWrite(
         },
       };
     }
-    return { status: "ok", value: parsed as Record<string, unknown>, existed: true };
+    return { status: "ok", value: parsed as Record<string, unknown>, existed: true, style };
   } catch (err) {
     return { status: "unparseable", failure: describeParseError(filePath, err) };
   }
@@ -575,7 +595,7 @@ function applyOperation(
           },
         };
       }
-      const serialized = serializeJson(read.value);
+      const serialized = serializeJson(read.value, read.style);
       atomicWriteFile(op.filePath, serialized);
 
       // 8. Re-read and re-parse; restore the snapshot if it didn't survive.

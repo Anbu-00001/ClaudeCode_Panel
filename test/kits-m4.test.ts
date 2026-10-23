@@ -344,3 +344,26 @@ describe("updating a kit to a newer version", () => {
     expect(fs.readFileSync(claudeMd, "utf8")).toBe(once);
   });
 });
+
+describe("a settings file keeps its own layout", () => {
+  const localPath = () => path.join(repoDir, ".claude", "settings.local.json");
+
+  for (const [name, indent] of [
+    ["4 spaces", "    "],
+    ["tabs", "\t"],
+  ] as const) {
+    it(`installing and removing a kit leaves a file indented with ${name} byte-for-byte as it was`, () => {
+      fs.mkdirSync(path.dirname(localPath()), { recursive: true });
+      const original = `${JSON.stringify({ model: "opus", env: { A: "1" } }, null, indent)}`;
+      fs.writeFileSync(localPath(), original); // and no trailing newline
+
+      installKit(kit("safe-permissions"), repo(), appendUndoEntry);
+      const installed = fs.readFileSync(localPath(), "utf8");
+      expect(installed).toContain(`\n${indent}"permissions": {\n${indent}${indent}"allow"`);
+      expect(installed.endsWith("\n")).toBe(false);
+
+      uninstallKit(kit("safe-permissions"), repo(), appendUndoEntry);
+      expect(fs.readFileSync(localPath(), "utf8")).toBe(original);
+    });
+  }
+});
