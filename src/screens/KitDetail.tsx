@@ -19,7 +19,7 @@ import {
 } from "../core/kits.js";
 import type { RepoInfo } from "../core/paths.js";
 import { appendUndoEntry } from "../core/undo.js";
-import { describeInvalid } from "../core/write.js";
+import { describeInvalid, describeParseFailure, type ParseFailure } from "../core/write.js";
 
 type Stage = "preview" | "files" | "confirm-uninstall" | "done" | "failed";
 
@@ -88,7 +88,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   function doInstall() {
     const result = installKit(kit, repo, appendUndoEntry);
     if (!result.ok) {
-      setErrorText(describeFailure(result.failure));
+      setErrorText(describeFailure(result.failure, repo.projectDir));
       setStage("failed");
       return;
     }
@@ -100,7 +100,7 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   function doUninstall() {
     const result = uninstallKit(kit, repo, appendUndoEntry);
     if (!result.ok) {
-      setErrorText(describeFailure(result.failure));
+      setErrorText(describeFailure(result.failure, repo.projectDir));
       setStage("failed");
       return;
     }
@@ -386,11 +386,11 @@ export function KitDetail({ kit, repo, onBack }: KitDetailProps) {
   );
 }
 
-function describeFailure(failure: unknown): string {
+function describeFailure(failure: unknown, projectDir: string): string {
   if (typeof failure !== "object" || failure === null) return "Something went wrong.";
   const f = failure as { reason?: string; message?: string; filePath?: string };
   if (f.reason === "unparseable") {
-    return "One of your setup files has a typo in it, so it wasn't safe to change. Nothing was touched.";
+    return describeParseFailure((failure as { failure: ParseFailure }).failure, projectDir);
   }
   if (f.reason === "invalid") {
     return describeInvalid(failure as Parameters<typeof describeInvalid>[0]);

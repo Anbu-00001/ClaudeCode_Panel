@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { maskDeep } from "./mask.js";
-import { gitExcludeFile } from "./paths.js";
+import { getClaudePaths, gitExcludeFile, type RepoInfo } from "./paths.js";
 import { validateByFilename } from "./validate.js";
 
 /**
@@ -230,9 +230,14 @@ function isProcessAlive(pid: number): boolean {
  * user's config otherwise — measured at ~1 per 2 crashes.
  *
  * Only files whose owning pid is gone are removed, so a concurrently running
- * ccpanel's in-flight write is never touched.
+ * ccpanel's in-flight write is never touched. `minAgeMs` also spares any file
+ * younger than that, in case a pid was reused by an unrelated process.
  */
-export function sweepStaleTempFiles(dirPath: string): string[] {
+export function sweepStaleTempFiles(
+  dirPath: string,
+  minAgeMs = 0,
+  now: number = Date.now(),
+): string[] {
   let entries: string[];
   try {
     entries = fs.readdirSync(dirPath);
@@ -247,6 +252,7 @@ export function sweepStaleTempFiles(dirPath: string): string[] {
     const pid = Number(match[1]);
     if (pid === process.pid || isProcessAlive(pid)) continue;
     try {
+      if (minAgeMs > 0 && now - fs.statSync(path.join(dirPath, name)).mtimeMs < minAgeMs) continue;
       fs.unlinkSync(path.join(dirPath, name));
       removed.push(name);
     } catch {}
@@ -282,6 +288,31 @@ export function ensureGitExcluded(filePath: string): void {
   } catch {
     /* best effort */
   }
+}
+
+/** How old a leftover temp file must be before startup clears it away. */
+export const STARTUP_SWEEP_MIN_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * Clears temp files a killed ccpanel left beside the config files it writes:
+ * ~/.claude, ~ (for ~/.claude.json), the project's .claude folder and the
+ * project folder itself (.mcp.json, CLAUDE.md). Only ccpanel's own temp-file
+ * names, from processes that are gone, at least an hour old.
+ */
+export function sweepConfigTempFiles(repo: RepoInfo, now: number = Date.now()): string[] {
+  const paths = getClaudePaths(repo);
+  const dirs = new Set(
+    [paths.userSettings, paths.userClaudeJson, paths.projectSettings, paths.projectMcp].map((f) =>
+      path.dirname(f),
+    ),
+  );
+  const removed: string[] = [];
+  for (const dir of dirs) {
+    for (const name of sweepStaleTempFiles(dir, STARTUP_SWEEP_MIN_AGE_MS, now)) {
+      removed.push(path.join(dir, name));
+    }
+  }
+  return removed;
 }
 
 export function appendLine(filePath: string, line: string): void {
@@ -434,6 +465,20 @@ export function describeParseError(filePath: string, err: unknown): ParseFailure
     line: match?.[1] ? Number(match[1]) : null,
     column: match?.[2] ? Number(match[2]) : null,
   };
+}
+
+/**
+ * A parse failure in words: which file, and where in it, so the user can go
+ * straight to the typo. Paths inside `baseDir` are shown relative to it.
+ */
+export function describeParseFailure(failure: ParseFailure, baseDir?: string): string {
+  const rel = baseDir ? path.relative(baseDir, failure.filePath) : "";
+  const name = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : failure.filePath;
+  const where =
+    failure.line !== null
+      ? ` at line ${failure.line}${failure.column !== null ? `, column ${failure.column}` : ""}`
+      : "";
+  return `${name} has a typo in it${where}, so it wasn't safe to change. Nothing was touched. Fix that, then try again.`;
 }
 
 /** Serialized to match Claude Code's own style: 2-space indent, trailing newline. */

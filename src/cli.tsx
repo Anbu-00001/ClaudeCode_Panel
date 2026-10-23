@@ -8,6 +8,8 @@ import {
   readVersion,
   sizeProblem,
 } from "./core/launch.js";
+import { resolvePaths } from "./core/paths.js";
+import { sweepConfigTempFiles } from "./core/write.js";
 
 const action = parseLaunchArgs(process.argv.slice(2));
 if (action.kind === "help") {
@@ -38,6 +40,14 @@ const tooSmall = sizeProblem(process.stdout.columns ?? 80, process.stdout.rows ?
 if (tooSmall) {
   process.stdout.write(`${tooSmall}\n`);
   process.exit(0);
+}
+
+// A ccpanel killed mid-write leaves a hidden temp file next to the config it
+// was writing. Clear old ones away before starting; never a reason not to start.
+try {
+  sweepConfigTempFiles(resolvePaths());
+} catch {
+  /* best effort */
 }
 
 const { waitUntilExit } = render(<App />);

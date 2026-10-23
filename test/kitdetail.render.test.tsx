@@ -188,3 +188,18 @@ describe("the kit screen, opened in the home folder", () => {
     unmount();
   });
 });
+
+describe("the kit screen, when a setup file has a typo", () => {
+  it("names the file and the line, so the user can find it", async () => {
+    fs.mkdirSync(path.join(repoDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, ".claude", "settings.json"), '{\n  "a": 1,\n  oops\n}\n');
+    const { lastFrame, stdin, unmount } = show("deletion-warning");
+    await settle();
+    stdin.write("\r");
+    await settle();
+    const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(frame).toContain(".claude/settings.json has a typo in it at line 3");
+    expect(frame).toContain("Nothing was touched");
+    unmount();
+  });
+});

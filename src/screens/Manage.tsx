@@ -23,7 +23,7 @@ import { listTools, SCOPE_HEADING, type ToolInfo } from "../core/tools.js";
 import { defaultExec, listSkillUpdates, type SkillUpdateCheck } from "../core/updates.js";
 import { readFolderUsage, readSessionUsage, type UsageReport } from "../core/usage.js";
 import type { SkillOverrideState } from "../core/validate.js";
-import { describeInvalid, type TransactionResult } from "../core/write.js";
+import { describeInvalid, describeParseFailure, type TransactionResult } from "../core/write.js";
 
 interface ManageProps {
   repo: RepoInfo;
@@ -112,12 +112,10 @@ function usageLine(
  * particular is worth naming: it means a running Claude Code rewrote the file,
  * the user's change was not applied, and trying again will usually work.
  */
-function writeProblem(result: TransactionResult): string {
+function writeProblem(result: TransactionResult, projectDir: string): string {
   const failure = result.failure;
   if (failure?.reason === "conflict") return failure.message;
-  if (failure?.reason === "unparseable") {
-    return "That file has a syntax error, so ccpanel left it alone. Fix the file first.";
-  }
+  if (failure?.reason === "unparseable") return describeParseFailure(failure.failure, projectDir);
   if (failure?.reason === "invalid") return describeInvalid(failure);
   return "That couldn't be saved, so nothing was changed.";
 }
@@ -223,7 +221,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         currentTool.switch === "mcpjson"
           ? setToolEnabled(repo, currentTool.name, !currentTool.enabled)
           : setServerDenied(repo, currentTool.name, !currentTool.enabled);
-      if (!result.ok) setNotice(writeProblem(result));
+      if (!result.ok) setNotice(writeProblem(result, repo.projectDir));
       else {
         // Servers switched off outside .mcp.json are off for this folder only,
         // which is Claude Code's rule, not ours — so say it rather than let
@@ -262,7 +260,7 @@ export function Manage({ repo, onOpenKits, onBack }: ManageProps) {
         return;
       }
       const result = setSkillState(repo, currentSkill.name, nextState(currentState));
-      if (!result.ok) setNotice(writeProblem(result));
+      if (!result.ok) setNotice(writeProblem(result, repo.projectDir));
       else {
         setChanged(true);
         refresh();

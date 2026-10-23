@@ -63,3 +63,17 @@ describe("stale temp file sweep", () => {
     expect(sweepStaleTempFiles(path.join(workDir, "nope"))).toEqual([]);
   });
 });
+
+describe("the startup sweep", () => {
+  it("spares a leftover younger than the minimum age, and clears it once older", () => {
+    const stale = path.join(workDir, `.settings.json.ccpanel.${deadPid()}-abc12345.tmp`);
+    fs.writeFileSync(stale, "partial");
+    const hour = 60 * 60 * 1000;
+
+    expect(sweepStaleTempFiles(workDir, hour)).toEqual([]);
+    expect(fs.existsSync(stale)).toBe(true);
+
+    expect(sweepStaleTempFiles(workDir, hour, Date.now() + 2 * hour)).toHaveLength(1);
+    expect(fs.existsSync(stale)).toBe(false);
+  });
+});
