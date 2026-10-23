@@ -10,6 +10,7 @@ import {
   isKitInstalled,
   KIT_ORDER,
   loadKits,
+  previewUninstall,
   uninstallKit,
 } from "../src/core/kits.js";
 import { resolvePaths } from "../src/core/paths.js";
@@ -305,6 +306,27 @@ describe("context-rescue", () => {
     expect(note).toContain("Where we got to");
     expect(note).toContain("work.ts");
     expect(note).not.toContain("where-we-got-to.md"); // must not list itself
+  });
+
+  it("keeps its note out of git, and deletes the note when removed", () => {
+    installKit(kit("context-rescue"), repo(), appendUndoEntry);
+    runHook(COMPACT_HOOK, { hook_event_name: "PreCompact", trigger: "auto", cwd: repoDir });
+    const note = path.join(repoDir, ".claude", "where-we-got-to.md");
+    expect(fs.existsSync(note)).toBe(true);
+    const status = execSync("git status --porcelain --untracked-files=all", {
+      cwd: repoDir,
+      encoding: "utf8",
+    });
+    expect(status).not.toContain("where-we-got-to.md");
+
+    expect(
+      previewUninstall(kit("context-rescue"), repo()).some(
+        (l) =>
+          l.action === "delete" && l.displayPath === path.join(".claude", "where-we-got-to.md"),
+      ),
+    ).toBe(true);
+    expect(uninstallKit(kit("context-rescue"), repo(), appendUndoEntry).ok).toBe(true);
+    expect(fs.existsSync(note)).toBe(false);
   });
 
   it("still writes something useful outside a git repo", () => {

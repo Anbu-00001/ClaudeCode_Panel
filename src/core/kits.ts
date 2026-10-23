@@ -12,6 +12,7 @@ import {
   ccpanelHome,
   DEFAULT_CONTENT_MODE,
   EXECUTABLE_MODE,
+  ensureGitExcluded,
   findFencedBlock,
   isExecutable,
   type Operation,
@@ -120,6 +121,12 @@ export const kitSchema = z.looseObject({
   explain: z.string(),
   honestLimit: z.string().nullish(),
   uninstallNote: z.string().nullish(),
+  /**
+   * Files the kit's hooks write while it runs, relative to the project. They
+   * are kept out of git on install (they are notes for this computer, not
+   * project files) and deleted on uninstall, since nobody else wrote them.
+   */
+  generatedFiles: z.array(z.string()).optional(),
 });
 
 export type InstallEntry = z.infer<typeof installEntrySchema>;
@@ -711,6 +718,12 @@ function buildOperations(
     });
   }
 
+  if (mode === "uninstall") {
+    for (const filePath of existingGeneratedFiles(kit, repo)) {
+      ops.push({ kind: "deleteFile", filePath });
+    }
+  }
+
   return ops;
 }
 
@@ -1141,6 +1154,11 @@ export function installKit(
     }
     if (changed) writeFileLedger(ledger);
   }
+  if (result.ok) {
+    for (const rel of kit.generatedFiles ?? []) {
+      ensureGitExcluded(path.join(repo.projectDir, rel));
+    }
+  }
   if (result.ok && mcp.written.length > 0) {
     const ledger = readMcpLedger();
     for (const { file, name } of mcp.written) {
@@ -1284,6 +1302,13 @@ export interface UninstallPreviewLine {
  * What "Remove it" would do, worked out the same way uninstallKit decides:
  * shown before anything is touched, so removing is never one keypress.
  */
+/** The kit's generated files that exist right now. */
+function existingGeneratedFiles(kit: Kit, repo: RepoInfo): string[] {
+  return (kit.generatedFiles ?? [])
+    .map((rel) => path.join(repo.projectDir, rel))
+    .filter((f) => fs.existsSync(f));
+}
+
 export function previewUninstall(kit: Kit, repo: RepoInfo): UninstallPreviewLine[] {
   const lines: UninstallPreviewLine[] = [];
   const { remove } = planPermissionRemoval(kit, repo, readPermissionLedger());
@@ -1347,6 +1372,13 @@ export function previewUninstall(kit: Kit, repo: RepoInfo): UninstallPreviewLine
         ? { action: "keep", displayPath, note: "you've changed it, so it stays" }
         : { action: "delete", displayPath, note: "deletes this file" },
     );
+  }
+  for (const filePath of existingGeneratedFiles(kit, repo)) {
+    lines.push({
+      action: "delete",
+      displayPath: path.relative(repo.projectDir, filePath),
+      note: "deletes the note this kit wrote",
+    });
   }
   return lines;
 }

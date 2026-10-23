@@ -19,5 +19,6 @@
   "tryThisExplain": "After a long session, ask Claude that to pick up exactly where you left off.",
   "explain": "Claude can only hold so much of a conversation at once. When it fills up, older parts get squeezed into a short summary, and specifics get lost — which files you touched, what you already tried, what didn't work. This notices that moment coming and writes the important parts to a file first, so they can be read back afterwards.",
   "honestLimit": "It saves what can be read from your project — changed files, recent commits, the branch. It can't save the parts of the conversation that were only ever spoken about.",
-  "uninstallNote": "The note file it wrote is left where it is, in case you still want it."
+  "uninstallNote": "Removing it also deletes the note it wrote, .claude/where-we-got-to.md.",
+  "generatedFiles": [".claude/where-we-got-to.md"]
 }
