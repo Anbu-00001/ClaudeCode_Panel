@@ -197,6 +197,27 @@ describe("install and uninstall", () => {
     ]);
   });
 
+  it("deletes a settings file it created once removing the kit leaves it empty", () => {
+    const settingsPath = path.join(repoDir, ".claude", "settings.json");
+    installKit(kit(), repo(), appendUndoEntry);
+    expect(fs.existsSync(settingsPath)).toBe(true);
+    const un = uninstallKit(kit(), repo(), appendUndoEntry);
+    expect(un.ok).toBe(true);
+    expect(fs.existsSync(settingsPath)).toBe(false);
+    // The deletion is part of the same undo entry as the rest of the removal.
+    const [latest] = readUndoLogNewestFirst();
+    expect(latest?.changes.some((c) => c.op === "delete" && c.file === settingsPath)).toBe(true);
+  });
+
+  it("keeps an empty settings file that was the user's before the kit", () => {
+    const settingsPath = path.join(repoDir, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, "{}\n");
+    installKit(kit(), repo(), appendUndoEntry);
+    uninstallKit(kit(), repo(), appendUndoEntry);
+    expect(fs.readFileSync(settingsPath, "utf8").trim()).toBe("{}");
+  });
+
   it("records the install as one undo entry", () => {
     installKit(kit(), repo(), appendUndoEntry);
     const entries = readUndoLogNewestFirst();
@@ -313,7 +334,7 @@ describe("post-install self-check (§9.5)", () => {
     expect(verifyDeletionWarning(kit(), spacedRepo).ok).toBe(true);
 
     uninstallKit(kit(), spacedRepo, appendUndoEntry);
-    expect(JSON.parse(fs.readFileSync(settingsPath, "utf8")).hooks).toBeUndefined();
+    expect(fs.existsSync(settingsPath)).toBe(false);
   });
 
   it("reports a missing file rather than claiming success", () => {

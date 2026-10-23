@@ -270,7 +270,8 @@ describe("uninstall takes out only what the kit itself added", () => {
     );
 
     uninstallKit(kit("commit-messages"), repo(), appendUndoEntry);
-    expect(allowList()).toEqual([]);
+    // Nothing left, and ccpanel made the file, so the file itself goes too.
+    expect(fs.existsSync(localPath())).toBe(false);
   });
 
   it("keeps a kit file the user has edited, and says which", () => {

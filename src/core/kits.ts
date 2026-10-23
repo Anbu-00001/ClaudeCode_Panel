@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { RungId } from "./detect.js";
 import { type ClaudePaths, getClaudePaths, projectIsHome, type RepoInfo } from "./paths.js";
+import { readUndoLog } from "./undo.js";
 import {
   atomicWriteFile,
   ccpanelHome,
@@ -1151,6 +1152,44 @@ export function installKit(
   return result;
 }
 
+/** True when the file holds exactly an empty JSON object. */
+function isEmptyJsonObject(filePath: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      Object.keys(parsed).length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The kit's settings and tool files that are now `{}` and that ccpanel's own
+ * change log shows ccpanel created (no file was there before its first
+ * change). A file the user had first is never deleted, empty or not.
+ */
+function emptyFilesCcpanelCreated(kit: Kit, repo: RepoInfo): string[] {
+  const candidates = new Set<string>();
+  for (const entry of kit.installs) {
+    if (entry.kind === "settings" || (entry.kind === "mcp" && entry.scope === "project")) {
+      candidates.add(targetPathFor(kit, entry, repo));
+    }
+  }
+  const empty = [...candidates].filter(isEmptyJsonObject);
+  if (empty.length === 0) return [];
+  const created = new Set<string>();
+  for (const undoEntry of readUndoLog()) {
+    for (const change of undoEntry.changes) {
+      if (change.existedBefore === false) created.add(path.resolve(change.file));
+    }
+  }
+  return empty.filter((f) => created.has(path.resolve(f)));
+}
+
 export interface UninstallResult extends TransactionResult {
   /** Kit files left in place because the user had edited them. */
   keptFiles: string[];
@@ -1168,19 +1207,33 @@ export function uninstallKit(
   const { remove, handOver } = planPermissionRemoval(kit, repo, ledger);
   const files: FilePlan = { kept: [] };
   const mcpLedger = readMcpLedger();
+  const meta = {
+    kind: "kit-uninstall",
+    id: kit.id,
+    label: `Removed: ${kit.title}`,
+    projectDir: repo.projectDir,
+  };
   const result = runTransaction(
     buildOperations(kit, repo, "uninstall", { added: new Map(), remove }, files, {
       ledger: mcpLedger,
       written: [],
     }),
-    {
-      kind: "kit-uninstall",
-      id: kit.id,
-      label: `Removed: ${kit.title}`,
-      projectDir: repo.projectDir,
-    },
-    recordUndo,
+    meta,
   );
+  if (result.ok) {
+    // A settings file ccpanel created for this kit, now back to `{}`, would
+    // otherwise stay behind as an empty file the user never made.
+    const leftovers = emptyFilesCcpanelCreated(kit, repo);
+    if (leftovers.length > 0) {
+      const cleanup = runTransaction(
+        leftovers.map((filePath): Operation => ({ kind: "deleteFile", filePath })),
+        meta,
+      );
+      if (cleanup.ok) result.changes.push(...cleanup.changes);
+    }
+    // One undo entry for the whole removal, cleanup included.
+    recordUndo?.(meta, result.changes);
+  }
   if (result.ok && remove.size > 0) {
     for (const file of remove.keys()) {
       if (ledger[file]) delete ledger[file][kit.id];

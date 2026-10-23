@@ -49,7 +49,10 @@ export function Preview({ preview }: { preview: KitPreview }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>Nothing else on your computer is touched.</Text>
+        <Text dimColor>
+          ccpanel also keeps a note of this change and a backup in ~/.claude/ccpanel so it can be
+          undone.
+        </Text>
       </Box>
     </Box>
   );
